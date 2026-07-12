@@ -1,0 +1,130 @@
+//! This module represents a minesweeper board
+//! It contains an array of cells, as well as an allocator
+//! for pointing to some scratch space to do bfs for flood fill
+
+const std = @import("std");
+const print = std.debug.print;
+
+const Self = @This();
+
+cells: []Cell,
+width: u32,
+height: u32,
+scratchAllocator: std.heap.FixedBufferAllocator,
+
+/// The packed struct that represents a minesweeper cell
+const Cell = packed struct(u16) {
+    mine: bool,
+    flagged: bool,
+    revealed: bool,
+    neighbors: u4,
+    team: u8,
+    pad: u1 = 0,
+};
+
+/// Initalizes a new Board of the provided width, height, and number of mines using the provided buffer.
+/// The buffer must be at least 4 * width * height bytes.
+/// If the buffer is not large enough, an UndersizedBuffer error is returned
+/// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
+pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMines: u32) error{UndersizedBuffer, TooManyMines}!Self {
+    if (buffer.len < width * height * @sizeOf(Cell) * 2) {
+        return error.UndersizedBuffer;
+    }
+
+    if (numMines > width * height){
+        return error.TooManyMines;
+    }
+
+    const cellsSize = width * height * @sizeOf(Cell);
+
+    var board = Self{
+        .cells = std.mem.bytesAsSlice(Cell, buffer[0..cellsSize]),
+        .width = width,
+        .height = height,
+        .scratchAllocator = .init(buffer[cellsSize..]),
+    };
+
+    board.fillBoard(numMines);
+    board.setNeighbors();
+    return board;
+}
+
+/// Does a fisher-yates shuffle to place the mines
+fn fillBoard(self: *Self, numMines: u32) void {
+    @memset(self.cells[0..numMines], Cell{
+        .mine = true,
+        .flagged = false,
+        .revealed = false,
+        .neighbors = 0,
+        .team = 0,
+    });
+    @memset(self.cells[numMines..self.cells.len], @bitCast(@as(u16, 0)));
+
+    var prng: std.Random.DefaultPrng = .init(42);
+    const rand = prng.random();
+
+    for (0..numMines) |i| {
+        const j = rand.intRangeAtMost(usize, i, self.cells.len - 1);
+        std.mem.swap(Cell, &self.cells[i], &self.cells[j]);
+    }
+}
+
+/// Sets the neighbors field for each of the Cells in the board
+fn setNeighbors(self: *Self) void {
+    for (self.cells, 0..) |cell, i| {
+        if (!cell.mine) continue;
+        const row = i / self.width;
+        const col = i % self.width;
+        for (0..3) |dy| {
+            if (row == 0 and dy == 0) continue;
+            for (0..3) |dx| {
+                if (col == 0 and dx == 0) continue;
+                const optional_cell = self.getCell(
+                    @as(u32, @intCast(row + dy - 1)),
+                    @as(u32, @intCast(col + dx - 1))
+                );
+                if (optional_cell) |real_cell| {
+                    real_cell.neighbors += 1;
+                }
+            }
+        }
+    }
+}
+
+/// Gets an optional cell from a given row and column, returning null if row and col are not a valid entry
+fn getCell(self: Self, row: u32, col: u32) ?*Cell {
+    if (row >= self.height or col >= self.width) return null;
+    return &self.cells[row * self.width + col];
+}
+
+/// Prints out the state of the board
+pub fn printBoard(self: Self) void {
+    for (0..self.width) |_| {
+        print("----", .{});
+    }
+    print("\n", .{});
+    for (0..self.height) |row| {
+        for (0..self.width) |col| {
+            printCell(self.cells[row * self.width + col]);
+        }
+        print("|\n", .{});
+        for (0..self.width) |_| {
+            print("----", .{});
+        }
+        print("\n", .{});
+    }
+}
+
+fn printCell(cell: Cell) void {
+    if (cell.mine) {
+        print("| ⬤ ", .{});
+    } else if (cell.flagged) {
+        print("| ⚑ ", .{});
+    } else if (cell.revealed) {
+        print("| █ ", .{});
+    } else if (!cell.revealed) {
+        print("| {} ", .{cell.neighbors});
+    }
+}
+
+// TODO: Tests that check invariants of the board state
