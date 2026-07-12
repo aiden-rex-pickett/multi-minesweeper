@@ -26,12 +26,12 @@ const Cell = packed struct(u16) {
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
-pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMines: u32) error{UndersizedBuffer, TooManyMines}!Self {
+pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMines: u32) error{ UndersizedBuffer, TooManyMines }!Self {
     if (buffer.len < width * height * @sizeOf(Cell) * 2) {
         return error.UndersizedBuffer;
     }
 
-    if (numMines > width * height){
+    if (numMines > width * height) {
         return error.TooManyMines;
     }
 
@@ -79,10 +79,7 @@ fn setNeighbors(self: *Self) void {
             if (row == 0 and dy == 0) continue;
             for (0..3) |dx| {
                 if (col == 0 and dx == 0) continue;
-                const optional_cell = self.getCell(
-                    @as(u32, @intCast(row + dy - 1)),
-                    @as(u32, @intCast(col + dx - 1))
-                );
+                const optional_cell = self.getCell(@as(u32, @intCast(row + dy - 1)), @as(u32, @intCast(col + dx - 1)));
                 if (optional_cell) |real_cell| {
                     real_cell.neighbors += 1;
                 }
@@ -128,3 +125,65 @@ fn printCell(cell: Cell) void {
 }
 
 // TODO: Tests that check invariants of the board state
+
+const gpa = std.heap.DebugAllocator(.{});
+
+const testing = std.testing;
+
+test "buffer-too-small-error" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 50);
+    { // Basic test
+        defer interface.free(buff);
+
+        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20));
+    }
+
+    { // Size of board, but not enough scratch space
+        buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 2);
+        defer interface.free(buff);
+
+        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20));
+    }
+
+    { // Same size, but slightly larger board
+        buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
+        defer interface.free(buff);
+
+        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, 20));
+    }
+
+    { // Doesn't change with number of mines
+        buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
+        defer interface.free(buff);
+
+        for (0..110) |numMines| {
+            try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, @as(u32, @intCast(numMines))));
+        }
+    }
+}
+
+test "too-many-mines" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    // TODO: Fix
+    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
+    defer interface.free(buff);
+    for (0..20) |width| {
+        for (0..20) |height| {
+            for (0..width * height + 1) |numMines| {
+                defer interface.free(buff);
+                _ = try Self.init(buff, @as(u32, @intCast(width)), @as(u32, @intCast(height)), @as(u32, @intCast(numMines)));
+            }
+            for (width * height..1000) |numMines| {
+                defer interface.free(buff);
+                try testing.expectError(error.TooManyMines, Self.init(buff, 10, 10, @as(u32, @intCast(numMines))));
+            }
+        }
+    }
+}
