@@ -69,29 +69,28 @@ fn fillBoard(self: *Self, numMines: u32) void {
     }
 }
 
-/// Sets the neighbors field for each of the Cells in the board
+/// Sets the neighbors field for each of the Cells in the board, filling out the numbers properly
 fn setNeighbors(self: *Self) void {
     for (self.cells, 0..) |cell, i| {
         if (!cell.mine) continue;
         const row = i / self.width;
         const col = i % self.width;
-        for (0..3) |dy| {
-            if (row == 0 and dy == 0) continue;
-            for (0..3) |dx| {
-                if (col == 0 and dx == 0) continue;
-                const optional_cell = self.getCell(@as(u32, @intCast(row + dy - 1)), @as(u32, @intCast(col + dx - 1)));
-                if (optional_cell) |real_cell| {
-                    real_cell.neighbors += 1;
-                }
+
+        var dy: i32 = -1;
+        while (dy <= 1) : (dy += 1) {
+            const r = @as(i32, @intCast(row)) + dy;
+            if (r < 0 or r >= self.height) continue;
+
+            var dx: i32 = -1;
+            while (dx <= 1) : (dx += 1) {
+                const c = @as(i32, @intCast(col)) + dx;
+                if (c < 0 or c >= self.width) continue;
+
+                const index = @as(usize, @intCast(r)) * @as(usize, @intCast(self.width)) + @as(usize, @intCast(c));
+                self.cells[index].neighbors += 1;
             }
         }
     }
-}
-
-/// Gets an optional cell from a given row and column, returning null if row and col are not a valid entry
-fn getCell(self: Self, row: u32, col: u32) ?*Cell {
-    if (row >= self.height or col >= self.width) return null;
-    return &self.cells[row * self.width + col];
 }
 
 /// Prints out the state of the board
