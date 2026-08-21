@@ -5,8 +5,6 @@ const Io = std.Io;
 const GameBoard = @import("game_board.zig");
 
 pub fn main(init: std.process.Init) !void {
-    _ = init;
-
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -19,6 +17,9 @@ pub fn main(init: std.process.Init) !void {
     const boardWidth = 30;
     const boardHeight = 16;
     const numMines = 99;
-    var gameBoard: GameBoard = try .init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines);
+
+    const rng_impl: std.Random.IoSource = .{ .io = init.io };
+
+    var gameBoard: GameBoard = try .init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines, rng_impl.interface());
     gameBoard.printBoard();
 }

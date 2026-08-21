@@ -26,7 +26,7 @@ const Cell = packed struct(u16) {
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
-pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMines: u32) error{ UndersizedBuffer, TooManyMines }!Self {
+pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMines: u32, rand: std.Random) error{ UndersizedBuffer, TooManyMines }!Self {
     if (buffer.len < width * height * @sizeOf(Cell) * 2) {
         return error.UndersizedBuffer;
     }
@@ -44,13 +44,13 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMine
         .scratchAllocator = .init(buffer[cellsSize..]),
     };
 
-    board.fillBoard(numMines);
+    board.fillBoard(numMines, rand);
     board.setNeighbors();
     return board;
 }
 
 /// Does a fisher-yates shuffle to place the mines
-fn fillBoard(self: *Self, numMines: u32) void {
+fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
     @memset(self.cells[0..numMines], Cell{
         .mine = true,
         .flagged = false,
@@ -59,9 +59,6 @@ fn fillBoard(self: *Self, numMines: u32) void {
         .team = 0,
     });
     @memset(self.cells[numMines..self.cells.len], @bitCast(@as(u16, 0)));
-
-    var prng: std.Random.DefaultPrng = .init(42);
-    const rand = prng.random();
 
     for (0..numMines) |i| {
         const j = rand.intRangeAtMost(usize, i, self.cells.len - 1);
@@ -134,25 +131,26 @@ test "buffer-too-small-error" {
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     var buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 50);
     { // Basic test
         defer interface.free(buff);
 
-        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20));
+        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20, prng.random()));
     }
 
     { // Size of board, but not enough scratch space
         buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 2);
         defer interface.free(buff);
 
-        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20));
+        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20, prng.random()));
     }
 
     { // Same size, but slightly larger board
         buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
         defer interface.free(buff);
 
-        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, 20));
+        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, 20, prng.random()));
     }
 
     { // Doesn't change with number of mines
@@ -160,7 +158,7 @@ test "buffer-too-small-error" {
         defer interface.free(buff);
 
         for (0..110) |numMines| {
-            try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, @as(u32, @intCast(numMines))));
+            try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, @as(u32, @intCast(numMines)), prng.random()));
         }
     }
 }
@@ -170,19 +168,73 @@ test "too-many-mines" {
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
-    // TODO: Fix
-    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
+    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 20 * 20 * 2 * 2);
     defer interface.free(buff);
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     for (0..20) |width| {
         for (0..20) |height| {
-            for (0..width * height + 1) |numMines| {
-                defer interface.free(buff);
-                _ = try Self.init(buff, @as(u32, @intCast(width)), @as(u32, @intCast(height)), @as(u32, @intCast(numMines)));
-            }
-            for (width * height..1000) |numMines| {
-                defer interface.free(buff);
-                try testing.expectError(error.TooManyMines, Self.init(buff, 10, 10, @as(u32, @intCast(numMines))));
+            for ((width * height + 1)..1000) |numMines| {
+                try testing.expectError(error.TooManyMines, Self.init(buff, @as(u32, @intCast(width)), @as(u32, @intCast(height)), @as(u32, @intCast(numMines)), prng.random()));
             }
         }
+    }
+}
+
+test "mine-setup-validation" {
+    const min_width = 5;
+    const min_height = 5;
+    const max_width = 100;
+    const max_height = 100;
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    const rand = prng.random();
+
+    // 1000 different board shapes
+    const num_shapes = 1000;
+    for (0..num_shapes) |_| {
+        const width = rand.intRangeAtMost(u32, min_width, max_width);
+        const height = rand.intRangeAtMost(u32, min_height, max_height);
+        const num_threads = 22;
+
+        const mines_step = (width * height) / (num_threads + 2);
+
+        const Thread = std.Thread;
+
+        const board_test = struct {
+            // Testing function
+            fn testBoard(board_width: u32, board_height: u32, num_mines: u32, result: *bool) void {
+                print("THREAD_NUM: {}\n", .{Thread.getCurrentId()});
+                print("board_width: {}, board_height: {}, mines: {}\n\n", .{ board_width, board_height, num_mines });
+
+                var alloc = gpa{};
+                defer _ = alloc.deinit();
+                const interface = alloc.allocator();
+
+                const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), board_width * board_height * 2 * 2);
+                defer interface.free(buff);
+
+                result.* = true;
+            }
+        };
+
+        var threads: [num_threads]Thread = undefined;
+        var results: [num_threads]bool = undefined;
+
+        var i: u32 = 1;
+        while (i < num_threads + 1) : (i += 1) {
+            // board_test.testBoard(width, height, @as(u32, @intCast(i)) * mines_step, &results[i - 1]);
+            threads[i - 1] = try Thread.spawn(.{}, board_test.testBoard, .{ width, height, @as(u32, @intCast(i)) * mines_step, &results[i - 1] });
+        }
+
+        for (threads) |thread| {
+            thread.join();
+        }
+
+        print("width: {}, height: {} done. Results:\n", .{ width, height });
+        for (results) |result| {
+            print("result: {}\n", .{result});
+        }
+        print("\n\n\n", .{});
     }
 }
