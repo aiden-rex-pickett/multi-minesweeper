@@ -4,6 +4,16 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const width = b.option(u32, "width", "Board Width");
+    const height = b.option(u32, "height", "Board Height");
+    const num_mines = b.option(u32, "num_mines", "Number of mines");
+
+    const options = b.addOptions();
+
+    options.addOption(?u32, "width", width);
+    options.addOption(?u32, "height", height);
+    options.addOption(?u32, "num_mines", num_mines);
+
     const source_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -14,6 +24,8 @@ pub fn build(b: *std.Build) void {
         .name = "multi-minesweeper",
         .root_module = source_module,
     });
+
+    exe.root_module.addOptions("config", options);
 
     b.installArtifact(exe);
 }

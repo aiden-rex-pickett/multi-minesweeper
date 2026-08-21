@@ -3,6 +3,7 @@
 //! for pointing to some scratch space to do bfs for flood fill
 
 const std = @import("std");
+const mine_options = @import("config");
 const print = std.debug.print;
 
 const Self = @This();
@@ -47,6 +48,22 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMine
     board.fillBoard(numMines, rand);
     board.setNeighbors();
     return board;
+}
+
+/// Initalizes the board described by compile arguments that is baked into the executable.
+/// This simply amounts to shuffling the mines with an entropy source at runtime, all other initalization
+/// steps are handled at comptime if this option is used
+pub fn comptime_init(rand: std.Random) void {
+    if (mine_options.width == null and mine_options.height == null and mine_options.num_mines == null)
+        @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
+
+    const BoardConfig = struct {
+        width: u32,
+        height: u32,
+        num_mines: u32,
+    };
+
+    const selected: BoardConfig = .{ .width = mine_options.width.?, .height = mine_options.height.?, .num_mines = mine_options.num_mines.? };
 }
 
 /// Gets an optional pionter to the cell at the provided row and column.
