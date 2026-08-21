@@ -1,4 +1,5 @@
 const std = @import("std");
+const config = @import("config");
 const print = std.debug.print;
 const Io = std.Io;
 
@@ -8,6 +9,7 @@ pub fn main(init: std.process.Init) !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    // NOTE: Use in prod:
     // const allocator = std.heap.page_allocator;
 
     // Allocate one page for the whole game, with 2 byte alignment
@@ -16,13 +18,15 @@ pub fn main(init: std.process.Init) !void {
 
     const rng_impl: std.Random.IoSource = .{ .io = init.io };
 
-    // const boardWidth = 30;
-    // const boardHeight = 16;
-    // const numMines = 99;
+    var gameBoard: GameBoard = if (config.width != null)
+        GameBoard.comptime_init(rng_impl.interface())
+    else else_branch: {
+        const boardWidth = 30;
+        const boardHeight = 16;
+        const numMines = 99;
 
-    // var gameBoard: GameBoard = try .init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines, rng_impl.interface());
-
-    var gameBoard: GameBoard = GameBoard.comptime_init(rng_impl.interface());
+        break :else_branch try GameBoard.init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines, rng_impl.interface());
+    };
 
     gameBoard.printBoard();
     _ = gameBoard.validate_neighbor_counts();
