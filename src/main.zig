@@ -14,13 +14,16 @@ pub fn main(init: std.process.Init) !void {
     const page = try allocator.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), std.heap.page_size_min);
     defer allocator.free(page);
 
-    const boardWidth = 30;
-    const boardHeight = 16;
-    const numMines = 99;
-
     const rng_impl: std.Random.IoSource = .{ .io = init.io };
 
-    var gameBoard: GameBoard = try .init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines, rng_impl.interface());
+    // const boardWidth = 30;
+    // const boardHeight = 16;
+    // const numMines = 99;
+
+    // var gameBoard: GameBoard = try .init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines, rng_impl.interface());
+
+    var gameBoard: GameBoard = GameBoard.comptime_init(rng_impl.interface());
+
     gameBoard.printBoard();
     _ = gameBoard.validate_neighbor_counts();
 }

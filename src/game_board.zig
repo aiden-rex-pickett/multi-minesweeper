@@ -53,17 +53,46 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMine
 /// Initalizes the board described by compile arguments that is baked into the executable.
 /// This simply amounts to shuffling the mines with an entropy source at runtime, all other initalization
 /// steps are handled at comptime if this option is used
-pub fn comptime_init(rand: std.Random) void {
-    if (mine_options.width == null and mine_options.height == null and mine_options.num_mines == null)
-        @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
+pub fn comptime_init(rand: std.Random) Self {
+    const precomputed = comptime precompute: {
+        if (mine_options.width == null and mine_options.height == null and mine_options.num_mines == null)
+            @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
 
-    const BoardConfig = struct {
-        width: u32,
-        height: u32,
-        num_mines: u32,
+        const BoardConfig = struct {
+            width: u32,
+            height: u32,
+            num_mines: u32,
+        };
+
+        const selected: BoardConfig = .{ .width = mine_options.width.?, .height = mine_options.height.?, .num_mines = mine_options.num_mines.? };
+
+        if (selected.num_mines > selected.width * selected.height)
+            @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
+
+        const globals = struct {
+            pub threadlocal var buff: [selected.width * selected.height]Cell = undefined;
+            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)] u8 = undefined;
+        };
+
+        break :precompute .{
+            .width = selected.width,
+            .height = selected.height,
+            .num_mines = selected.num_mines,
+            .storage = globals,
+        };
     };
 
-    const selected: BoardConfig = .{ .width = mine_options.width.?, .height = mine_options.height.?, .num_mines = mine_options.num_mines.? };
+    var board = Self {
+        .cells = &precomputed.storage.buff,
+        .width = precomputed.width,
+        .height = precomputed.height,
+        .scratchAllocator = .init(&precomputed.storage.scratch_buff),
+    };
+
+    board.fillBoard(precomputed.num_mines, rand);
+    board.setNeighbors();
+
+    return board;
 }
 
 /// Gets an optional pionter to the cell at the provided row and column.
