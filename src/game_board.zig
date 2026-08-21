@@ -104,6 +104,7 @@ pub fn printBoard(self: Self) void {
     }
 }
 
+/// Prints a single cell
 fn printCell(cell: Cell) void {
     if (cell.mine) {
         print("|M{} ", .{cell.neighbors});
@@ -158,6 +159,8 @@ fn setNeighbors(self: *Self) void {
         }
     }
 }
+
+// -------------------- TESTS -------------------- //
 
 const gpa = std.heap.DebugAllocator(.{});
 
