@@ -80,6 +80,7 @@ fn setNeighbors(self: *Self) void {
 
             var dx: i32 = -1;
             while (dx <= 1) : (dx += 1) {
+                if (dy == 0 and dx == 0) continue;
                 const c = @as(i32, @intCast(col)) + dx;
                 if (c < 0 or c >= self.width) continue;
 
@@ -88,6 +89,11 @@ fn setNeighbors(self: *Self) void {
             }
         }
     }
+}
+
+pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
+    if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
+    return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
 }
 
 /// Prints out the state of the board
@@ -110,7 +116,7 @@ pub fn printBoard(self: Self) void {
 
 fn printCell(cell: Cell) void {
     if (cell.mine) {
-        print("| ⬤ ", .{});
+        print("|M{} ", .{cell.neighbors});
     } else if (cell.flagged) {
         print("| ⚑ ", .{});
     } else if (cell.revealed) {
@@ -120,7 +126,31 @@ fn printCell(cell: Cell) void {
     }
 }
 
-// TODO: Tests that check invariants of the board state
+pub fn validate_board(self: Self) bool {
+    for (self.cells, 0..) |cell, i| {
+        const row: i32 = @intCast(i / self.width);
+        const col: i32 = @intCast(i % self.width);
+        const seen = cell.neighbors;
+
+        var actual: i32 = 0;
+
+        var dy: i32 = -1;
+        while (dy <= 1) : (dy += 1) {
+            var dx: i32 = -1;
+            while (dx <= 1) : (dx += 1) {
+                if (dy == 0 and dx == 0) continue;
+                actual += if (self.getCell(row + dy, col + dx)) |check_cell| @intFromBool(check_cell.mine) else 0;
+            }
+        }
+
+        if (seen != actual) {
+            print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
+            self.printBoard();
+        }
+    }
+
+    return true;
+}
 
 const gpa = std.heap.DebugAllocator(.{});
 
@@ -203,38 +233,40 @@ test "mine-setup-validation" {
 
         const board_test = struct {
             // Testing function
-            fn testBoard(board_width: u32, board_height: u32, num_mines: u32, result: *bool) void {
+            fn testBoard(board_width: u32, board_height: u32, num_mines: u32, buffer: []align(@alignOf(Cell)) u8, random: std.Random, result: *bool) !void {
                 print("THREAD_NUM: {}\n", .{Thread.getCurrentId()});
                 print("board_width: {}, board_height: {}, mines: {}\n\n", .{ board_width, board_height, num_mines });
 
-                var alloc = gpa{};
-                defer _ = alloc.deinit();
-                const interface = alloc.allocator();
-
-                const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), board_width * board_height * 2 * 2);
-                defer interface.free(buff);
-
-                result.* = true;
+                var game_board = try Self.init(buffer, board_width, board_height, num_mines, random);
+                result.* = game_board.validate_board();
             }
         };
 
         var threads: [num_threads]Thread = undefined;
         var results: [num_threads]bool = undefined;
 
-        var i: u32 = 1;
-        while (i < num_threads + 1) : (i += 1) {
-            // board_test.testBoard(width, height, @as(u32, @intCast(i)) * mines_step, &results[i - 1]);
-            threads[i - 1] = try Thread.spawn(.{}, board_test.testBoard, .{ width, height, @as(u32, @intCast(i)) * mines_step, &results[i - 1] });
+        {
+            var alloc = gpa{};
+            defer _ = alloc.deinit();
+            const interface = alloc.allocator();
+
+            var real_alloc: std.heap.ArenaAllocator = .init(interface);
+            defer real_alloc.deinit();
+            var real_interface = real_alloc.allocator();
+
+            var i: u32 = 1;
+            while (i < num_threads + 1) : (i += 1) {
+                const buff = try real_interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), width * height * 2 * 2);
+                threads[i - 1] = try Thread.spawn(.{}, board_test.testBoard, .{ width, height, @as(u32, @intCast(i)) * mines_step, buff, rand, &results[i - 1] });
+            }
+
+            for (threads) |thread| {
+                thread.join();
+            }
         }
 
-        for (threads) |thread| {
-            thread.join();
-        }
-
-        print("width: {}, height: {} done. Results:\n", .{ width, height });
         for (results) |result| {
-            print("result: {}\n", .{result});
+            try testing.expect(result);
         }
-        print("\n\n\n", .{});
     }
 }

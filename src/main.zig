@@ -22,4 +22,5 @@ pub fn main(init: std.process.Init) !void {
 
     var gameBoard: GameBoard = try .init(page[0 .. boardWidth * boardHeight * 4], boardWidth, boardHeight, numMines, rng_impl.interface());
     gameBoard.printBoard();
+    _ = gameBoard.validate_board();
 }
