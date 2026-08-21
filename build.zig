@@ -4,11 +4,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const fixed = b.option(bool, "fixed", "Construct board at compile time with =true") orelse false;
+    const fixed = b.option(bool, "fixed", "Construct board at compile time with =true. Must provide -Dwidth, -Dheight, -Dnum_mines if so") orelse false;
 
-    const width = b.option(u32, "width", "Board Width if using -Dfixed");
-    const height = b.option(u32, "height", "Board Height if using -Dfixed");
-    const num_mines = b.option(u32, "num_mines", "Number of mines if using -Dfixed");
+    const width = b.option(u32, "width", "Board Width, only has an effect if using -Dfixed=true");
+    const height = b.option(u32, "height", "Board Height, only has an effect if using -Dfixed=true");
+    const num_mines = b.option(u32, "num_mines", "Number of mines, only has an effect if using -Dfixed=true");
 
     const options = b.addOptions();
 
@@ -23,12 +23,12 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    source_module.addOptions("config", options);
+
     const exe = b.addExecutable(.{
         .name = "multi-minesweeper",
         .root_module = source_module,
     });
-
-    exe.root_module.addOptions("config", options);
 
     b.installArtifact(exe);
 }
