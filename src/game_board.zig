@@ -14,7 +14,7 @@ height: u32,
 scratchAllocator: std.heap.FixedBufferAllocator,
 
 /// The packed struct that represents a minesweeper cell
-const Cell = packed struct(u16) {
+pub const Cell = packed struct(u16) {
     mine: bool,
     flagged: bool,
     revealed: bool,
