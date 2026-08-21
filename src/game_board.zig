@@ -55,7 +55,7 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMine
 /// steps are handled at comptime if this option is used
 pub fn comptime_init(rand: std.Random) Self {
     const precomputed = comptime precompute: {
-        if (mine_options.width == null and mine_options.height == null and mine_options.num_mines == null)
+        if (mine_options.width == null or mine_options.height == null or mine_options.num_mines == null)
             @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
 
         const BoardConfig = struct {
