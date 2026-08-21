@@ -3,6 +3,7 @@
 //! for pointing to some scratch space to do bfs for flood fill
 
 const std = @import("std");
+const mine_options = @import("config");
 const print = std.debug.print;
 
 const Self = @This();
@@ -13,7 +14,7 @@ height: u32,
 scratchAllocator: std.heap.FixedBufferAllocator,
 
 /// The packed struct that represents a minesweeper cell
-const Cell = packed struct(u16) {
+pub const Cell = packed struct(u16) {
     mine: bool,
     flagged: bool,
     revealed: bool,
@@ -46,6 +47,51 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_min
 
     board.fillBoard(num_mines, rand);
     board.setNeighbors();
+    return board;
+}
+
+/// Initalizes the board described by compile arguments that is baked into the executable.
+/// This simply amounts to shuffling the mines with an entropy source at runtime, all other initalization
+/// steps are handled at comptime if this option is used
+pub fn comptime_init(rand: std.Random) Self {
+    const precomputed = comptime precompute: {
+        if (mine_options.width == null or mine_options.height == null or mine_options.num_mines == null)
+            @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
+
+        const BoardConfig = struct {
+            width: u32,
+            height: u32,
+            num_mines: u32,
+        };
+
+        const selected: BoardConfig = .{ .width = mine_options.width.?, .height = mine_options.height.?, .num_mines = mine_options.num_mines.? };
+
+        if (selected.num_mines > selected.width * selected.height)
+            @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
+
+        const globals = struct {
+            pub threadlocal var buff: [selected.width * selected.height]Cell = undefined;
+            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)] u8 = undefined;
+        };
+
+        break :precompute .{
+            .width = selected.width,
+            .height = selected.height,
+            .num_mines = selected.num_mines,
+            .storage = globals,
+        };
+    };
+
+    var board = Self {
+        .cells = &precomputed.storage.buff,
+        .width = precomputed.width,
+        .height = precomputed.height,
+        .scratchAllocator = .init(&precomputed.storage.scratch_buff),
+    };
+
+    board.fillBoard(precomputed.num_mines, rand);
+    board.setNeighbors();
+
     return board;
 }
 
