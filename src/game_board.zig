@@ -26,12 +26,12 @@ const Cell = packed struct(u16) {
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
-pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMines: u32, rand: std.Random) error{ UndersizedBuffer, TooManyMines }!Self {
+pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_mines: u32, rand: std.Random) error{ UndersizedBuffer, TooManyMines }!Self {
     if (buffer.len < width * height * @sizeOf(Cell) * 2) {
         return error.UndersizedBuffer;
     }
 
-    if (numMines > width * height) {
+    if (num_mines > width * height) {
         return error.TooManyMines;
     }
 
@@ -44,7 +44,7 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMine
         .scratchAllocator = .init(buffer[cellsSize..]),
     };
 
-    board.fillBoard(numMines, rand);
+    board.fillBoard(num_mines, rand);
     board.setNeighbors();
     return board;
 }
