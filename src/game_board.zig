@@ -49,51 +49,41 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, numMine
     return board;
 }
 
-/// Does a fisher-yates shuffle to place the mines
-fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
-    @memset(self.cells[0..numMines], Cell{
-        .mine = true,
-        .flagged = false,
-        .revealed = false,
-        .neighbors = 0,
-        .team = 0,
-    });
-    @memset(self.cells[numMines..self.cells.len], @bitCast(@as(u16, 0)));
-
-    for (0..numMines) |i| {
-        const j = rand.intRangeAtMost(usize, i, self.cells.len - 1);
-        std.mem.swap(Cell, &self.cells[i], &self.cells[j]);
-    }
-}
-
-/// Sets the neighbors field for each of the Cells in the board, filling out the numbers properly
-fn setNeighbors(self: *Self) void {
-    for (self.cells, 0..) |cell, i| {
-        if (!cell.mine) continue;
-        const row = i / self.width;
-        const col = i % self.width;
-
-        var dy: i32 = -1;
-        while (dy <= 1) : (dy += 1) {
-            const r = @as(i32, @intCast(row)) + dy;
-            if (r < 0 or r >= self.height) continue;
-
-            var dx: i32 = -1;
-            while (dx <= 1) : (dx += 1) {
-                if (dy == 0 and dx == 0) continue;
-                const c = @as(i32, @intCast(col)) + dx;
-                if (c < 0 or c >= self.width) continue;
-
-                const index = @as(usize, @intCast(r)) * @as(usize, @intCast(self.width)) + @as(usize, @intCast(c));
-                self.cells[index].neighbors += 1;
-            }
-        }
-    }
-}
-
+/// Gets an optional pionter to the cell at the provided row and column.
+/// If the row and column are not valid the optional is empty, else the optional is populated
 pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
+}
+
+/// This function validates that the neighbor numbers for every mine are correct, based
+/// on the number of mine cells surrounding it
+///
+/// Note that this is only valid in so far as the mine bit is being set correctly
+pub fn validate_neighbor_counts(self: Self) bool {
+    for (self.cells, 0..) |cell, i| {
+        const row: i32 = @intCast(i / self.width);
+        const col: i32 = @intCast(i % self.width);
+        const seen = cell.neighbors;
+
+        var actual: i32 = 0;
+
+        var dy: i32 = -1;
+        while (dy <= 1) : (dy += 1) {
+            var dx: i32 = -1;
+            while (dx <= 1) : (dx += 1) {
+                if (dy == 0 and dx == 0) continue;
+                actual += if (self.getCell(row + dy, col + dx)) |check_cell| @intFromBool(check_cell.mine) else 0;
+            }
+        }
+
+        if (seen != actual) {
+            print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
+            self.printBoard();
+        }
+    }
+
+    return true;
 }
 
 /// Prints out the state of the board
@@ -126,30 +116,47 @@ fn printCell(cell: Cell) void {
     }
 }
 
-pub fn validate_board(self: Self) bool {
-    for (self.cells, 0..) |cell, i| {
-        const row: i32 = @intCast(i / self.width);
-        const col: i32 = @intCast(i % self.width);
-        const seen = cell.neighbors;
+/// Does a fisher-yates shuffle to place the mines
+fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
+    @memset(self.cells[0..numMines], Cell{
+        .mine = true,
+        .flagged = false,
+        .revealed = false,
+        .neighbors = 0,
+        .team = 0,
+    });
+    @memset(self.cells[numMines..self.cells.len], @bitCast(@as(u16, 0)));
 
-        var actual: i32 = 0;
+    for (0..numMines) |i| {
+        const j = rand.intRangeAtMost(usize, i, self.cells.len - 1);
+        std.mem.swap(Cell, &self.cells[i], &self.cells[j]);
+    }
+}
+
+/// Sets the neighbors field for each of the Cells in the board, filling out the numbers properly
+/// To be used after fillBoard is called on a fresh board
+fn setNeighbors(self: *Self) void {
+    for (self.cells, 0..) |cell, i| {
+        if (!cell.mine) continue;
+        const row = i / self.width;
+        const col = i % self.width;
 
         var dy: i32 = -1;
         while (dy <= 1) : (dy += 1) {
+            const r = @as(i32, @intCast(row)) + dy;
+            if (r < 0 or r >= self.height) continue;
+
             var dx: i32 = -1;
             while (dx <= 1) : (dx += 1) {
                 if (dy == 0 and dx == 0) continue;
-                actual += if (self.getCell(row + dy, col + dx)) |check_cell| @intFromBool(check_cell.mine) else 0;
+                const c = @as(i32, @intCast(col)) + dx;
+                if (c < 0 or c >= self.width) continue;
+
+                const index = @as(usize, @intCast(r)) * @as(usize, @intCast(self.width)) + @as(usize, @intCast(c));
+                self.cells[index].neighbors += 1;
             }
         }
-
-        if (seen != actual) {
-            print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
-            self.printBoard();
-        }
     }
-
-    return true;
 }
 
 const gpa = std.heap.DebugAllocator(.{});
@@ -238,7 +245,7 @@ test "mine-setup-validation" {
                 print("board_width: {}, board_height: {}, mines: {}\n\n", .{ board_width, board_height, num_mines });
 
                 var game_board = try Self.init(buffer, board_width, board_height, num_mines, random);
-                result.* = game_board.validate_board();
+                result.* = game_board.validate_neighbor_counts();
             }
         };
 
