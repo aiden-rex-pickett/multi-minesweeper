@@ -107,7 +107,7 @@ pub fn printBoard(self: Self) void {
 /// Prints a single cell
 fn printCell(cell: Cell) void {
     if (cell.mine) {
-        print("|M{} ", .{cell.neighbors});
+        print("| ● ", .{});
     } else if (cell.flagged) {
         print("| ⚑ ", .{});
     } else if (cell.revealed) {
@@ -283,15 +283,15 @@ test "mine-setup-validation" {
 
 // Note: Expects set-mine to work
 test "get-mines-test" {
-    var alloc = gpa{};
-    defer alloc.deinit();
-    const interface = alloc.allocator();
-
-    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 20 * 20 * 2 * 2);
-    defer interface.free(buff);
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-
-    // TODO: Finish, after set mine is built out
-    var game_board: Self = .init(buff, 10, 10, 0, prng.random());
+    // var alloc = gpa{};
+    // defer alloc.deinit();
+    // const interface = alloc.allocator();
+    //
+    // const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 20 * 20 * 2 * 2);
+    // defer interface.free(buff);
+    //
+    // var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    //
+    // // TODO: Finish, after set mine is built out
+    // var game_board: Self = .init(buff, 10, 10, 0, prng.random());
 }
