@@ -11,6 +11,17 @@ pub fn main(init: std.process.Init) !void {
     var gameBoard: GameBoard = if (config.fixed)
         GameBoard.comptime_init(rng_impl.interface())
     else else_branch: {
+        comptime { // Compile-time error if compile-time board generation options provided without providing -Dfixed
+            const conf_opt = .{ 
+                .{ .name = "Compile-time option -Dheight set without -Dfixed=true set", .val = config.height, },
+                .{ .name = "Compile-time option -Dwidth set without -Dfixed=true set", .val = config.width }, 
+                .{ .name = "Compile-time option -Dnum_mines  set without -Dfixed=true set", .val = config.num_mines } 
+            };
+            for (conf_opt) |conf| {
+                if (conf.val) |_| @compileError(conf.name);
+            }
+        }
+
         const boardWidth = 15;
         const boardHeight = 15;
         const numMines = 99;

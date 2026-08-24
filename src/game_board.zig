@@ -56,7 +56,7 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_min
 pub fn comptime_init(rand: std.Random) Self {
     const precomputed = comptime precompute: {
         if (mine_options.width == null or mine_options.height == null or mine_options.num_mines == null)
-            @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
+            @compileError("Comptime board initalization (-Dfixed=true) attempted without providing all of the following arguments: -Dwidth, -Dheight, and -Dnum_mines arguments");
 
         const BoardConfig = struct {
             width: u32,
@@ -71,7 +71,7 @@ pub fn comptime_init(rand: std.Random) Self {
 
         const globals = struct {
             pub threadlocal var buff: [selected.width * selected.height]Cell = undefined;
-            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)] u8 = undefined;
+            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)]u8 = undefined;
         };
 
         break :precompute .{
@@ -82,7 +82,7 @@ pub fn comptime_init(rand: std.Random) Self {
         };
     };
 
-    var board = Self {
+    var board = Self{
         .cells = &precomputed.storage.buff,
         .width = precomputed.width,
         .height = precomputed.height,
