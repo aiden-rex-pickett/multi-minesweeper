@@ -108,6 +108,11 @@ pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
 }
 
+pub fn toggleFlag(self: Self, row: i32, col: i32) void {
+    const optCell = self.getCell(row, col);
+    if (optCell) |cell| cell.flagged = !cell.flagged;
+}
+
 /// This function validates that the neighbor numbers for every mine are correct, based
 /// on the number of mine cells surrounding it
 ///
@@ -131,42 +136,11 @@ pub fn validate_neighbor_counts(self: Self) bool {
 
         if (seen != actual) {
             print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
-            self.printBoard();
+            self.printBoard(true);
         }
     }
 
     return true;
-}
-
-/// Prints out the state of the board
-pub fn printBoard(self: Self) void {
-    for (0..self.width) |_| {
-        print("----", .{});
-    }
-    print("\n", .{});
-    for (0..self.height) |row| {
-        for (0..self.width) |col| {
-            printCell(self.cells[row * self.width + col]);
-        }
-        print("|\n", .{});
-        for (0..self.width) |_| {
-            print("----", .{});
-        }
-        print("\n", .{});
-    }
-}
-
-/// Prints a single cell
-fn printCell(cell: Cell) void {
-    if (cell.mine) {
-        print("| ● ", .{});
-    } else if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (cell.revealed) {
-        print("| █ ", .{});
-    } else if (!cell.revealed) {
-        print("| {} ", .{cell.neighbors});
-    }
 }
 
 /// Does a fisher-yates shuffle to place the mines
@@ -209,6 +183,46 @@ fn setNeighbors(self: *Self) void {
                 self.cells[index].neighbors += 1;
             }
         }
+    }
+}
+
+/// Prints out the state of the board
+pub fn printBoard(self: Self, debug: bool) void {
+    for (0..self.width) |_| {
+        print("----", .{});
+    }
+    print("\n", .{});
+    for (0..self.height) |row| {
+        for (0..self.width) |col| {
+            if (debug) printCellDebug(self.cells[row * self.width + col]) else printCell(self.cells[row * self.width + col]);
+        }
+        print("|\n", .{});
+        for (0..self.width) |_| {
+            print("----", .{});
+        }
+        print("\n", .{});
+    }
+}
+
+/// Prints a single cell
+fn printCellDebug(cell: Cell) void {
+    if (cell.flagged) {
+        print("| ⚑ ", .{});
+    } else if (!cell.revealed) {
+        print("| █ ", .{});
+    } else if (cell.revealed) {
+        print("| {} ", .{cell.neighbors});
+    }
+}
+
+/// Prints a single cell for debug purposes
+fn printCell(cell: Cell) void {
+    if (cell.flagged) {
+        print("| ⚑ ", .{});
+    } else if (!cell.revealed) {
+        print("| █ ", .{});
+    } else if (cell.revealed) {
+        print("| {} ", .{cell.neighbors});
     }
 }
 

@@ -32,6 +32,6 @@ pub fn main(init: std.process.Init) !void {
         break :else_branch try GameBoard.init(&buffer, boardWidth, boardHeight, numMines, rng_impl.interface());
     };
 
-    gameBoard.printBoard();
+    gameBoard.printBoard(false);
     _ = gameBoard.validate_neighbor_counts();
 }
