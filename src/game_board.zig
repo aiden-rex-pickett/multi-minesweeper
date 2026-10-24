@@ -136,7 +136,7 @@ pub fn validate_neighbor_counts(self: Self) bool {
 
         if (seen != actual) {
             print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
-            self.printBoard(true);
+            unreachable;
         }
     }
 
@@ -183,46 +183,6 @@ fn setNeighbors(self: *Self) void {
                 self.cells[index].neighbors += 1;
             }
         }
-    }
-}
-
-/// Prints out the state of the board
-pub fn printBoard(self: Self, debug: bool) void {
-    for (0..self.width) |_| {
-        print("----", .{});
-    }
-    print("\n", .{});
-    for (0..self.height) |row| {
-        for (0..self.width) |col| {
-            if (debug) printCellDebug(self.cells[row * self.width + col]) else printCell(self.cells[row * self.width + col]);
-        }
-        print("|\n", .{});
-        for (0..self.width) |_| {
-            print("----", .{});
-        }
-        print("\n", .{});
-    }
-}
-
-/// Prints a single cell
-fn printCellDebug(cell: Cell) void {
-    if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (!cell.revealed) {
-        print("| █ ", .{});
-    } else if (cell.revealed) {
-        print("| {} ", .{cell.neighbors});
-    }
-}
-
-/// Prints a single cell for debug purposes
-fn printCell(cell: Cell) void {
-    if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (!cell.revealed) {
-        print("| █ ", .{});
-    } else if (cell.revealed) {
-        print("| {} ", .{cell.neighbors});
     }
 }
 
