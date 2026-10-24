@@ -4,6 +4,8 @@ const print = std.debug.print;
 const Io = std.Io;
 
 const GameBoard = @import("game_board.zig");
+const Renderer = @import("renderer.zig");
+const TerminalRenderer = @import("terminal_renderer.zig");
 
 pub fn main(init: std.process.Init) !void {
     const rng_impl: std.Random.IoSource = .{ .io = init.io };
@@ -12,11 +14,10 @@ pub fn main(init: std.process.Init) !void {
         GameBoard.comptime_init(rng_impl.interface())
     else else_branch: {
         comptime { // Compile-time error if compile-time board generation options provided without providing -Dfixed
-            const conf_opt = .{ 
-                .{ .name = "Compile-time option -Dheight set without -Dfixed=true set", .val = config.height, },
-                .{ .name = "Compile-time option -Dwidth set without -Dfixed=true set", .val = config.width }, 
-                .{ .name = "Compile-time option -Dnum_mines  set without -Dfixed=true set", .val = config.num_mines } 
-            };
+            const conf_opt = .{ .{
+                .name = "Compile-time option -Dheight set without -Dfixed=true set",
+                .val = config.height,
+            }, .{ .name = "Compile-time option -Dwidth set without -Dfixed=true set", .val = config.width }, .{ .name = "Compile-time option -Dnum_mines  set without -Dfixed=true set", .val = config.num_mines } };
             for (conf_opt) |conf| {
                 if (conf.val) |_| @compileError(conf.name);
             }
@@ -32,6 +33,10 @@ pub fn main(init: std.process.Init) !void {
         break :else_branch try GameBoard.init(&buffer, boardWidth, boardHeight, numMines, rng_impl.interface());
     };
 
-    gameBoard.printBoard(false);
+    var renderer = TerminalRenderer{};
+    const terminalRenderer: Renderer = renderer.renderer();
+    try terminalRenderer.renderBoard(&gameBoard);
+    try terminalRenderer.renderBoardDebug(&gameBoard);
+
     _ = gameBoard.validate_neighbor_counts();
 }

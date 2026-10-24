@@ -20,17 +20,17 @@ pub const VTable = struct {
 
 // TODO: Maybe move to GameBoard struct? Might make more sense
 pub const Action = struct {
-    row: u32,
-    col: u32,
+    row: i32,
+    col: i32,
     flag: bool,
 };
 
 pub fn renderBoard(self: Self, board: *const GameBoard) anyerror!void {
-    self.vtable.renderBoard(self.ptr, board);
+    return self.vtable.renderBoard(self.ptr, board);
 }
 
 pub fn renderBoardDebug(self: Self, board: *const GameBoard) anyerror!void {
-    self.vtable.renderBoardDebug(self.ptr, board);
+    return self.vtable.renderBoardDebug(self.ptr, board);
 }
 
 pub fn getUserInput(self: Self) anyerror!Action {
