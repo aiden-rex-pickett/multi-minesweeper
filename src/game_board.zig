@@ -2,6 +2,12 @@
 //! It contains an array of cells, as well as an allocator
 //! for pointing to some scratch space to do bfs for flood fill
 
+// TODO:
+//   1. SIMD Mine counting, using 8 shifted registers and then accumulate to that row
+//   2. SIMD Flood fill, which will require massive architecture overhaul to store SOA with 0_count bitmask, mines bitmask,
+//      and revealed bitmask. Then a u8 array to store computed mine adjacency numbers. But if I can, it would be sick as
+//      the flood fill would take no memory. Can still use comptime baked-in memory too if I want. Maybe build as other file
+
 const std = @import("std");
 const mine_options = @import("config");
 const print = std.debug.print;
@@ -56,7 +62,7 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_min
 pub fn comptime_init(rand: std.Random) Self {
     const precomputed = comptime precompute: {
         if (mine_options.width == null or mine_options.height == null or mine_options.num_mines == null)
-            @compileError("Comptime board initalization attempted without providing -Dwidth, -Dheight, and -Dnum_mines arguments");
+            @compileError("Comptime board initalization (-Dfixed=true) attempted without providing all of the following arguments: -Dwidth, -Dheight, and -Dnum_mines arguments");
 
         const BoardConfig = struct {
             width: u32,
@@ -71,7 +77,7 @@ pub fn comptime_init(rand: std.Random) Self {
 
         const globals = struct {
             pub threadlocal var buff: [selected.width * selected.height]Cell = undefined;
-            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)] u8 = undefined;
+            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)]u8 = undefined;
         };
 
         break :precompute .{
@@ -82,7 +88,7 @@ pub fn comptime_init(rand: std.Random) Self {
         };
     };
 
-    var board = Self {
+    var board = Self{
         .cells = &precomputed.storage.buff,
         .width = precomputed.width,
         .height = precomputed.height,
@@ -100,6 +106,11 @@ pub fn comptime_init(rand: std.Random) Self {
 pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
+}
+
+pub fn toggleFlag(self: Self, row: i32, col: i32) void {
+    const optCell = self.getCell(row, col);
+    if (optCell) |cell| cell.flagged = !cell.flagged;
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based
@@ -125,42 +136,11 @@ pub fn validate_neighbor_counts(self: Self) bool {
 
         if (seen != actual) {
             print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
-            self.printBoard();
+            self.printBoard(true);
         }
     }
 
     return true;
-}
-
-/// Prints out the state of the board
-pub fn printBoard(self: Self) void {
-    for (0..self.width) |_| {
-        print("----", .{});
-    }
-    print("\n", .{});
-    for (0..self.height) |row| {
-        for (0..self.width) |col| {
-            printCell(self.cells[row * self.width + col]);
-        }
-        print("|\n", .{});
-        for (0..self.width) |_| {
-            print("----", .{});
-        }
-        print("\n", .{});
-    }
-}
-
-/// Prints a single cell
-fn printCell(cell: Cell) void {
-    if (cell.mine) {
-        print("| ● ", .{});
-    } else if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (cell.revealed) {
-        print("| █ ", .{});
-    } else if (!cell.revealed) {
-        print("| {} ", .{cell.neighbors});
-    }
 }
 
 /// Does a fisher-yates shuffle to place the mines
@@ -203,6 +183,46 @@ fn setNeighbors(self: *Self) void {
                 self.cells[index].neighbors += 1;
             }
         }
+    }
+}
+
+/// Prints out the state of the board
+pub fn printBoard(self: Self, debug: bool) void {
+    for (0..self.width) |_| {
+        print("----", .{});
+    }
+    print("\n", .{});
+    for (0..self.height) |row| {
+        for (0..self.width) |col| {
+            if (debug) printCellDebug(self.cells[row * self.width + col]) else printCell(self.cells[row * self.width + col]);
+        }
+        print("|\n", .{});
+        for (0..self.width) |_| {
+            print("----", .{});
+        }
+        print("\n", .{});
+    }
+}
+
+/// Prints a single cell
+fn printCellDebug(cell: Cell) void {
+    if (cell.flagged) {
+        print("| ⚑ ", .{});
+    } else if (!cell.revealed) {
+        print("| █ ", .{});
+    } else if (cell.revealed) {
+        print("| {} ", .{cell.neighbors});
+    }
+}
+
+/// Prints a single cell for debug purposes
+fn printCell(cell: Cell) void {
+    if (cell.flagged) {
+        print("| ⚑ ", .{});
+    } else if (!cell.revealed) {
+        print("| █ ", .{});
+    } else if (cell.revealed) {
+        print("| {} ", .{cell.neighbors});
     }
 }
 
