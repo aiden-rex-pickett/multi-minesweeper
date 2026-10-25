@@ -3,12 +3,12 @@
 const Self = @This();
 
 const GameBoard = @import("game_board.zig");
-const Renderer = @import("renderer.zig");
+const GameIo = @import("game_io.zig");
 
 const std = @import("std");
 const print = std.debug.print;
 
-pub fn renderer(self: *Self) Renderer {
+pub fn renderer(self: *Self) GameIo {
     return .{ .ptr = self, .vtable = &.{
         .renderBoard = renderBoard,
         .renderBoardDebug = renderBoardDebug,
@@ -27,7 +27,7 @@ pub fn renderBoardDebug(ctx: *anyopaque, board: *const GameBoard) anyerror!void 
 }
 
 /// Loops until user provides valid input to terminal
-pub fn getUserInput(ctx: *anyopaque, io: std.Io) anyerror!Renderer.Action {
+pub fn getUserInput(ctx: *anyopaque, io: std.Io) anyerror!GameIo.Action {
     _ = ctx;
     var inputBuffer: [1024]u8 = undefined;
     var stdin_read_wrap = std.Io.File.stdin().readerStreaming(io, &inputBuffer);
@@ -88,7 +88,7 @@ fn printCellDebug(cell: GameBoard.Cell) void {
 }
 
 /// Parses an action input string, returning badFormat error if not parsable
-fn parseAction(line: []const u8) !Renderer.Action {
+fn parseAction(line: []const u8) !GameIo.Action {
     const rowStart: usize = first: for (0..line.len) |i| {
         const char = line[i];
         if (char == ' ') continue;
@@ -122,7 +122,7 @@ fn parseAction(line: []const u8) !Renderer.Action {
         colEnd = line.len - 1;
     }
 
-    return Renderer.Action{
+    return GameIo.Action{
         .row = try std.fmt.parseInt(i32, line[rowStart .. rowEnd + 1], 10),
         .col = try std.fmt.parseInt(i32, line[colStart .. colEnd + 1], 10),
         .flag = flag,

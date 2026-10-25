@@ -4,8 +4,8 @@ const print = std.debug.print;
 const Io = std.Io;
 
 const GameBoard = @import("game_board.zig");
-const Renderer = @import("renderer.zig");
-const TerminalRenderer = @import("terminal_renderer.zig");
+const GameIo = @import("game_io.zig");
+const TerminalGameIo = @import("terminal_game_io.zig");
 
 pub fn main(init: std.process.Init) !void {
     const rng_impl: std.Random.IoSource = .{ .io = init.io };
@@ -33,12 +33,12 @@ pub fn main(init: std.process.Init) !void {
         break :else_branch try GameBoard.init(&buffer, boardWidth, boardHeight, numMines, rng_impl.interface());
     };
 
-    var renderer = TerminalRenderer{};
-    const terminalRenderer: Renderer = renderer.renderer();
+    var gameIo = TerminalGameIo{};
+    const terminalGameIo: GameIo = gameIo.renderer();
 
     while (true) gameLoop: {
-        try terminalRenderer.renderBoardDebug(&gameBoard);
-        const a = try terminalRenderer.getUserInput(init.io);
+        try terminalGameIo.renderBoardDebug(&gameBoard);
+        const a = try terminalGameIo.getUserInput(init.io);
         if (a.flag) {
             gameBoard.toggleFlag(a.row, a.col);
         } else {
