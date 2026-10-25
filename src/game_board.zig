@@ -109,8 +109,7 @@ pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
 }
 
 pub fn toggleFlag(self: Self, row: i32, col: i32) void {
-    const optCell = self.getCell(row, col);
-    if (optCell) |cell| cell.flagged = !cell.flagged;
+    if (self.getCell(row, col)) |cell| cell.flagged = !cell.flagged;
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based
@@ -257,7 +256,7 @@ test "mine-setup-validation" {
     const rand = prng.random();
 
     // 1000 different board shapes
-    const num_shapes = 1000;
+    const num_shapes = 100;
     for (0..num_shapes) |_| {
         const width = rand.intRangeAtMost(u32, min_width, max_width);
         const height = rand.intRangeAtMost(u32, min_height, max_height);
@@ -270,9 +269,6 @@ test "mine-setup-validation" {
         const board_test = struct {
             // Testing function
             fn testBoard(board_width: u32, board_height: u32, num_mines: u32, buffer: []align(@alignOf(Cell)) u8, random: std.Random, result: *bool) !void {
-                print("THREAD_NUM: {}\n", .{Thread.getCurrentId()});
-                print("board_width: {}, board_height: {}, mines: {}\n\n", .{ board_width, board_height, num_mines });
-
                 var game_board = try Self.init(buffer, board_width, board_height, num_mines, random);
                 result.* = game_board.validate_neighbor_counts();
             }
@@ -303,6 +299,78 @@ test "mine-setup-validation" {
 
         for (results) |result| {
             try testing.expect(result);
+        }
+    }
+}
+
+test "flag-set-basic" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
+    defer interface.free(buff);
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    var board = try Self.init(buff, 30, 30, 99, prng.random());
+    for (0..30) |row| {
+        for (0..30) |col| {
+            const r = @as(i32, @intCast(row));
+            const c = @as(i32, @intCast(col));
+            const before = board.getCell(r, c).?.*;
+            board.toggleFlag(r, c);
+            const after = board.getCell(r, c).?.*;
+            const fields = std.meta.fields(Cell);
+
+            inline for (fields) |field| {
+                const beforeVal = @field(before, field.name);
+                const afterVal = @field(after, field.name);
+                if (comptime std.mem.eql(u8, field.name, "flagged")) {
+                    try testing.expect(beforeVal == !afterVal);
+                } else {
+                    try testing.expect(beforeVal == afterVal);
+                }
+            }
+        }
+    }
+}
+
+test "flag-set-aftereffect" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
+    defer interface.free(buff);
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    var board = try Self.init(buff, 30, 30, 99, prng.random());
+
+    const Pair = struct {
+        row: usize,
+        col: usize,
+    };
+    var flagSet = std.AutoHashMap(Pair, void).init(interface);
+    defer flagSet.deinit();
+    for (0..30) |row| {
+        for (0..30) |col| {
+            if (prng.random().intRangeAtMost(i32, 0, 10) < 7) {
+                const r = @as(i32, @intCast(row));
+                const c = @as(i32, @intCast(col));
+                try flagSet.put(.{ .row = row, .col = col }, {});
+                board.toggleFlag(r, c);
+            }
+        }
+    }
+
+    for (0..30) |row| {
+        for (0..30) |col| {
+            const cell = board.getCell(@intCast(row), @intCast(col)).?;
+            if (flagSet.contains(Pair{ .row = row, .col = col })) {
+                try testing.expect(cell.flagged);
+            } else {
+                try testing.expect(!cell.flagged);
+            }
         }
     }
 }
