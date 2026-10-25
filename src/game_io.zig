@@ -20,7 +20,6 @@ pub const VTable = struct {
     getUserInput: *const fn (ctx: *anyopaque, io: std.Io) anyerror!Action,
 };
 
-// TODO: Maybe move to GameBoard struct? Might make more sense
 pub const Action = struct {
     row: i32,
     col: i32,

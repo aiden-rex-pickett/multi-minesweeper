@@ -36,15 +36,15 @@ pub fn main(init: std.process.Init) !void {
     var gameIo = TerminalGameIo{};
     const terminalGameIo: GameIo = gameIo.renderer();
 
-    while (true) gameLoop: {
+    gameLoop: while (true) {
         try terminalGameIo.renderBoardDebug(&gameBoard);
-        const a = try terminalGameIo.getUserInput(init.io);
-        if (a.flag) {
-            gameBoard.toggleFlag(a.row, a.col);
+        const userAction = try terminalGameIo.getUserInput(init.io);
+        if (userAction.flag) {
+            gameBoard.toggleFlag(userAction.row, userAction.col);
         } else {
-            switch (gameBoard.clickCell(a.row, a.col)) {
-                .Exploded => |cell| {
-                    print("OH NO. CELL AT {} WAS A MINE!\n", .{cell.mine});
+            switch (gameBoard.clickCell(userAction.row, userAction.col)) {
+                .Exploded => {
+                    print("OH NO. CELL AT {}, {} WAS A MINE!\n", .{userAction.row, userAction.col});
                     break :gameLoop;
                 },
                 .Win => {
@@ -61,6 +61,7 @@ pub fn main(init: std.process.Init) !void {
                     print("Click a valid cell please\n", .{});
                 },
             }
+            print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
         }
     }
 

@@ -17,6 +17,7 @@ const Self = @This();
 cells: []Cell,
 width: u32,
 height: u32,
+cellsLeft: u32,
 scratchAllocator: std.heap.FixedBufferAllocator,
 
 /// The packed struct that represents a minesweeper cell
@@ -48,6 +49,7 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_min
         .cells = std.mem.bytesAsSlice(Cell, buffer[0..cellsSize]),
         .width = width,
         .height = height,
+        .cellsLeft = width * height - num_mines,
         .scratchAllocator = .init(buffer[cellsSize..]),
     };
 
@@ -92,6 +94,7 @@ pub fn comptime_init(rand: std.Random) Self {
         .cells = &precomputed.storage.buff,
         .width = precomputed.width,
         .height = precomputed.height,
+        .cellsLeft = precomputed.height * precomputed.width - precomputed.num_mines,
         .scratchAllocator = .init(&precomputed.storage.scratch_buff),
     };
 
@@ -114,26 +117,27 @@ pub fn toggleFlag(self: Self, row: i32, col: i32) void {
 }
 
 /// Type returned by clickCell representing the result of the click
-pub const Result = union(enum) {
-    Exploded: Cell,
-    Safe: void,
-    Win: void,
-    Invalid: void,
-    Nop: void,
+pub const Result = enum {
+    Exploded,
+    Safe,
+    Win,
+    Invalid,
+    Nop,
 };
 
 /// Simulates clicking a cell
-pub fn clickCell(self: Self, row: i32, col: i32) Result {
-    const cell = self.getCell(row, col) orelse return .{ .Invalid = {} };
-    if (cell.flagged) return .{ .Nop = {} };
+pub fn clickCell(self: *Self, row: i32, col: i32) Result {
+    const cell = self.getCell(row, col) orelse return Result.Invalid;
+    if (cell.flagged) return Result.Nop;
 
     cell.revealed = true;
+    self.cellsLeft -= 1;
 
-    if (cell.mine) return .{ .Exploded = cell.* };
+    if (cell.mine) return Result.Exploded;
 
     // TODO: BFS flood fill here with scratch space;
 
-    return .{ .Safe = {} };
+    return Result.Safe;
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based
