@@ -9,13 +9,15 @@ const Self = @This();
 
 const GameBoard = @import("game_board.zig");
 
+const std = @import("std");
+
 ptr: *anyopaque,
 vtable: *const VTable,
 
 pub const VTable = struct {
     renderBoard: *const fn (ctx: *anyopaque, board: *const GameBoard) anyerror!void,
     renderBoardDebug: *const fn (ctx: *anyopaque, board: *const GameBoard) anyerror!void,
-    getUserInput: *const fn (ctx: *anyopaque) anyerror!Action,
+    getUserInput: *const fn (ctx: *anyopaque, io: std.Io) anyerror!Action,
 };
 
 // TODO: Maybe move to GameBoard struct? Might make more sense
@@ -33,6 +35,6 @@ pub fn renderBoardDebug(self: Self, board: *const GameBoard) anyerror!void {
     return self.vtable.renderBoardDebug(self.ptr, board);
 }
 
-pub fn getUserInput(self: Self) anyerror!Action {
-    return self.vtable.getUserInput(self.ptr);
+pub fn getUserInput(self: Self, io: std.Io) anyerror!Action {
+    return self.vtable.getUserInput(self.ptr, io);
 }

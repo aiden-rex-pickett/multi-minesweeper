@@ -35,8 +35,14 @@ pub fn main(init: std.process.Init) !void {
 
     var renderer = TerminalRenderer{};
     const terminalRenderer: Renderer = renderer.renderer();
-    try terminalRenderer.renderBoard(&gameBoard);
-    try terminalRenderer.renderBoardDebug(&gameBoard);
+
+    while (true) {
+        try terminalRenderer.renderBoard(&gameBoard);
+        const a = try terminalRenderer.getUserInput(init.io);
+        if (a.flag) {
+            gameBoard.toggleFlag(a.row, a.col);
+        }
+    }
 
     _ = gameBoard.validate_neighbor_counts();
 }
