@@ -70,7 +70,7 @@ fn printCell(cell: GameBoard.Cell) void {
         print("| ⚑ ", .{});
     } else if (!cell.revealed) {
         print("| █ ", .{});
-    } else if (cell.revealed) {
+    } else {
         print("| {} ", .{cell.neighbors});
     }
 }
@@ -78,13 +78,12 @@ fn printCell(cell: GameBoard.Cell) void {
 /// Prints a single cell for debug purposes
 fn printCellDebug(cell: GameBoard.Cell) void {
     if (cell.mine) {
-        print("| ● ", .{});
-    } else if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (cell.revealed) {
-        print("| █ ", .{});
-    } else if (!cell.revealed) {
-        print("| {} ", .{cell.neighbors});
+        if (cell.flagged) print("|f● ", .{}) else print("| ● ", .{});
+    } else {
+        print("|", .{});
+        if (cell.flagged) print("f", .{}) else print(" ", .{});
+        print("{}", .{cell.neighbors});
+        if (cell.revealed) print("r", .{}) else print(" ", .{});
     }
 }
 
@@ -124,8 +123,8 @@ fn parseAction(line: []const u8) !Renderer.Action {
     }
 
     return Renderer.Action{
-        .row = try std.fmt.parseInt(i32, line[rowStart..rowEnd + 1], 10),
-        .col = try std.fmt.parseInt(i32, line[colStart..colEnd + 1], 10),
+        .row = try std.fmt.parseInt(i32, line[rowStart .. rowEnd + 1], 10),
+        .col = try std.fmt.parseInt(i32, line[colStart .. colEnd + 1], 10),
         .flag = flag,
     };
 }

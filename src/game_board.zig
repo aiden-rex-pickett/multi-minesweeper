@@ -108,8 +108,32 @@ pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
 }
 
+/// Toggles the flag state for the cell with the provided row and column on the board, doing nothing if the row and column is invalid
 pub fn toggleFlag(self: Self, row: i32, col: i32) void {
     if (self.getCell(row, col)) |cell| cell.flagged = !cell.flagged;
+}
+
+/// Type returned by clickCell representing the result of the click
+pub const Result = union(enum) {
+    Exploded: Cell,
+    Safe: void,
+    Win: void,
+    Invalid: void,
+    Nop: void,
+};
+
+/// Simulates clicking a cell
+pub fn clickCell(self: Self, row: i32, col: i32) Result {
+    const cell = self.getCell(row, col) orelse return .{ .Invalid = {} };
+    if (cell.flagged) return .{ .Nop = {} };
+
+    cell.revealed = true;
+
+    if (cell.mine) return .{ .Exploded = cell.* };
+
+    // TODO: BFS flood fill here with scratch space;
+
+    return .{ .Safe = {} };
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based

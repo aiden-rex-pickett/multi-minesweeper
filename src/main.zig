@@ -36,11 +36,31 @@ pub fn main(init: std.process.Init) !void {
     var renderer = TerminalRenderer{};
     const terminalRenderer: Renderer = renderer.renderer();
 
-    while (true) {
-        try terminalRenderer.renderBoard(&gameBoard);
+    while (true) gameLoop: {
+        try terminalRenderer.renderBoardDebug(&gameBoard);
         const a = try terminalRenderer.getUserInput(init.io);
         if (a.flag) {
             gameBoard.toggleFlag(a.row, a.col);
+        } else {
+            switch (gameBoard.clickCell(a.row, a.col)) {
+                .Exploded => |cell| {
+                    print("OH NO. CELL AT {} WAS A MINE!\n", .{cell.mine});
+                    break :gameLoop;
+                },
+                .Win => {
+                    print("YOU WIN!!!\n", .{});
+                    break :gameLoop;
+                },
+                .Safe => {
+                    print("Okay...\n", .{});
+                },
+                .Nop => {
+                    print("That did nothing...\n", .{});
+                },
+                .Invalid => {
+                    print("Click a valid cell please\n", .{});
+                },
+            }
         }
     }
 
