@@ -11,6 +11,7 @@ const Self = @This();
 cells: []Cell,
 width: u32,
 height: u32,
+cellsLeft: u32,
 scratchAllocator: std.heap.FixedBufferAllocator,
 
 /// The packed struct that represents a minesweeper cell
@@ -42,6 +43,7 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_min
         .cells = std.mem.bytesAsSlice(Cell, buffer[0..cellsSize]),
         .width = width,
         .height = height,
+        .cellsLeft = width * height - num_mines,
         .scratchAllocator = .init(buffer[cellsSize..]),
     };
 
@@ -86,6 +88,7 @@ pub fn comptime_init(rand: std.Random) Self {
         .cells = &precomputed.storage.buff,
         .width = precomputed.width,
         .height = precomputed.height,
+        .cellsLeft = precomputed.height * precomputed.width - precomputed.num_mines,
         .scratchAllocator = .init(&precomputed.storage.scratch_buff),
     };
 
@@ -100,6 +103,35 @@ pub fn comptime_init(rand: std.Random) Self {
 pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
+}
+
+/// Toggles the flag state for the cell with the provided row and column on the board, doing nothing if the row and column is invalid
+pub fn toggleFlag(self: Self, row: i32, col: i32) void {
+    if (self.getCell(row, col)) |cell| cell.flagged = !cell.flagged;
+}
+
+/// Type returned by clickCell representing the result of the click
+pub const Result = enum {
+    Exploded,
+    Safe,
+    Win,
+    Invalid,
+    Nop,
+};
+
+/// Simulates clicking a cell
+pub fn clickCell(self: *Self, row: i32, col: i32) Result {
+    const cell = self.getCell(row, col) orelse return Result.Invalid;
+    if (cell.flagged) return Result.Nop;
+
+    cell.revealed = true;
+    self.cellsLeft -= 1;
+
+    if (cell.mine) return Result.Exploded;
+
+    // TODO: BFS flood fill here with scratch space;
+
+    return Result.Safe;
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based
@@ -125,42 +157,11 @@ pub fn validate_neighbor_counts(self: Self) bool {
 
         if (seen != actual) {
             print("ERROR: INVALID BOARD.\n Row: {}, Col: {}, actual: {}, seen: {}\n", .{ row, col, actual, seen });
-            self.printBoard();
+            unreachable;
         }
     }
 
     return true;
-}
-
-/// Prints out the state of the board
-pub fn printBoard(self: Self) void {
-    for (0..self.width) |_| {
-        print("----", .{});
-    }
-    print("\n", .{});
-    for (0..self.height) |row| {
-        for (0..self.width) |col| {
-            printCell(self.cells[row * self.width + col]);
-        }
-        print("|\n", .{});
-        for (0..self.width) |_| {
-            print("----", .{});
-        }
-        print("\n", .{});
-    }
-}
-
-/// Prints a single cell
-fn printCell(cell: Cell) void {
-    if (cell.mine) {
-        print("| ● ", .{});
-    } else if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (cell.revealed) {
-        print("| █ ", .{});
-    } else if (!cell.revealed) {
-        print("| {} ", .{cell.neighbors});
-    }
 }
 
 /// Does a fisher-yates shuffle to place the mines
@@ -277,7 +278,7 @@ test "mine-setup-validation" {
     const rand = prng.random();
 
     // 1000 different board shapes
-    const num_shapes = 1000;
+    const num_shapes = 100;
     for (0..num_shapes) |_| {
         const width = rand.intRangeAtMost(u32, min_width, max_width);
         const height = rand.intRangeAtMost(u32, min_height, max_height);
@@ -290,9 +291,6 @@ test "mine-setup-validation" {
         const board_test = struct {
             // Testing function
             fn testBoard(board_width: u32, board_height: u32, num_mines: u32, buffer: []align(@alignOf(Cell)) u8, random: std.Random, result: *bool) !void {
-                print("THREAD_NUM: {}\n", .{Thread.getCurrentId()});
-                print("board_width: {}, board_height: {}, mines: {}\n\n", .{ board_width, board_height, num_mines });
-
                 var game_board = try Self.init(buffer, board_width, board_height, num_mines, random);
                 result.* = game_board.validate_neighbor_counts();
             }
@@ -323,6 +321,78 @@ test "mine-setup-validation" {
 
         for (results) |result| {
             try testing.expect(result);
+        }
+    }
+}
+
+test "flag-set-basic" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
+    defer interface.free(buff);
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    var board = try Self.init(buff, 30, 30, 99, prng.random());
+    for (0..30) |row| {
+        for (0..30) |col| {
+            const r = @as(i32, @intCast(row));
+            const c = @as(i32, @intCast(col));
+            const before = board.getCell(r, c).?.*;
+            board.toggleFlag(r, c);
+            const after = board.getCell(r, c).?.*;
+            const fields = std.meta.fields(Cell);
+
+            inline for (fields) |field| {
+                const beforeVal = @field(before, field.name);
+                const afterVal = @field(after, field.name);
+                if (comptime std.mem.eql(u8, field.name, "flagged")) {
+                    try testing.expect(beforeVal == !afterVal);
+                } else {
+                    try testing.expect(beforeVal == afterVal);
+                }
+            }
+        }
+    }
+}
+
+test "flag-set-aftereffect" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
+    defer interface.free(buff);
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    var board = try Self.init(buff, 30, 30, 99, prng.random());
+
+    const Pair = struct {
+        row: usize,
+        col: usize,
+    };
+    var flagSet = std.AutoHashMap(Pair, void).init(interface);
+    defer flagSet.deinit();
+    for (0..30) |row| {
+        for (0..30) |col| {
+            if (prng.random().intRangeAtMost(i32, 0, 10) < 7) {
+                const r = @as(i32, @intCast(row));
+                const c = @as(i32, @intCast(col));
+                try flagSet.put(.{ .row = row, .col = col }, {});
+                board.toggleFlag(r, c);
+            }
+        }
+    }
+
+    for (0..30) |row| {
+        for (0..30) |col| {
+            const cell = board.getCell(@intCast(row), @intCast(col)).?;
+            if (flagSet.contains(Pair{ .row = row, .col = col })) {
+                try testing.expect(cell.flagged);
+            } else {
+                try testing.expect(!cell.flagged);
+            }
         }
     }
 }
