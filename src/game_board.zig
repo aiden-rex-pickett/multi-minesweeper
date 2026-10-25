@@ -403,7 +403,17 @@ test "flag-set-aftereffect" {
     }
 }
 
-// Note: Expects set-mine to work
+// TODO: Test for all the out of bounds being null for get mine
+// test "get-mines-out-of-bounds" {
+//     var alloc = gpa{};
+//     defer _ = alloc.deinit();
+//     const interface = alloc.allocator();
+//
+//     const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
+//     defer interface.free(buff);
+// }
+
+// TODO: Add basic test for get mine functionality, and after you change it it's right, also returns correct pointer and changes in cell array
 test "get-mines-test" {
     // var alloc = gpa{};
     // defer alloc.deinit();
