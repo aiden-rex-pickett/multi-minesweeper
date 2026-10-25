@@ -123,12 +123,6 @@ fn parseAction(line: []const u8) !Renderer.Action {
         colEnd = line.len - 1;
     }
 
-    print("ROW: {}, COL: {}, FLAG: {}", .{
-        try std.fmt.parseInt(i32, line[rowStart..rowEnd + 1], 10),
-        try std.fmt.parseInt(i32, line[colStart..colEnd + 1], 10),
-        flag,
-    });
-
     return Renderer.Action{
         .row = try std.fmt.parseInt(i32, line[rowStart..rowEnd + 1], 10),
         .col = try std.fmt.parseInt(i32, line[colStart..colEnd + 1], 10),
