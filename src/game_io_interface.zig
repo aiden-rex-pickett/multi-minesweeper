@@ -12,6 +12,7 @@ pub const Action = struct {
 
 /// The required methods to be a gameIo interface
 const reqMethods = .{
+    // TODO: Change these to not be anyerror but some more useful error union
     .{ .name = "renderBoard", .signature = fn (board: *const GameBoard) anyerror!void },
     .{ .name = "renderBoardDebug", .signature = fn (board: *const GameBoard) anyerror!void },
     .{ .name = "getUserInput", .signature = fn (io: std.Io) anyerror!Action },
