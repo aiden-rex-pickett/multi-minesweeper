@@ -9,17 +9,16 @@
 //      the flood fill would take no memory. Can still use comptime baked-in memory too if I want. Maybe build as other file
 
 const std = @import("std");
-const mine_options = @import("config");
 const print = std.debug.print;
+const testing = std.testing;
 
 const Self = @This();
 
-// TODO: Refactor to take in an allocator for scratch
-cells: []Cell,
-width: u32,
-height: u32,
-cellsLeft: u32,
-allocator: std.mem.Allocator,
+cells: []Cell, // Array of cells representing the board
+width: u32, // Board width
+height: u32, // Board height
+cellsLeft: u32, // Number of unrevealed non-mine cells left
+allocator: std.mem.Allocator, // Allocator that allocated the array of cells and that can be used for flood fill scratch memory
 
 /// The packed struct that represents a minesweeper cell
 pub const Cell = packed struct(u16) {
@@ -31,7 +30,7 @@ pub const Cell = packed struct(u16) {
     pad: u1 = 0,
 };
 
-const Pair = struct {
+pub const Pair = struct {
     row: i32,
     col: i32,
 };
@@ -60,52 +59,6 @@ pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, num_mines: u32, r
 
 pub fn deinit(self: Self) void {
     self.allocator.free(self.cells);
-}
-
-/// Initalizes the board described by compile arguments that is baked into the executable.
-/// This simply amounts to shuffling the mines with an entropy source at runtime, all other initalization
-/// steps are handled at comptime if this option is used
-/// TODO: Move this out of game board, into main somehow
-pub fn comptime_init(rand: std.Random) Self {
-    const precomputed = comptime precompute: {
-        if (mine_options.width == null or mine_options.height == null or mine_options.num_mines == null)
-            @compileError("Comptime board initalization (-Dfixed=true) attempted without providing all of the following arguments: -Dwidth, -Dheight, and -Dnum_mines arguments");
-
-        const BoardConfig = struct {
-            width: u32,
-            height: u32,
-            num_mines: u32,
-        };
-
-        const selected: BoardConfig = .{ .width = mine_options.width.?, .height = mine_options.height.?, .num_mines = mine_options.num_mines.? };
-
-        if (selected.num_mines > selected.width * selected.height)
-            @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
-
-        const globals = struct {
-            pub threadlocal var buff: [selected.width * selected.height * @sizeOf(Cell) + selected.width * selected.height * @sizeOf(Pair)]u8 = undefined;
-        };
-
-        break :precompute .{
-            .width = selected.width,
-            .height = selected.height,
-            .num_mines = selected.num_mines,
-            .storage = globals,
-        };
-    };
-
-    var board = Self{
-        .cells = std.heap.FixedBufferAllocator.init(&precomputed.storage.scratch_buff).allocator(),
-        .width = precomputed.width,
-        .height = precomputed.height,
-        .cellsLeft = precomputed.height * precomputed.width - precomputed.num_mines,
-        .allocator = std.heap.FixedBufferAllocator.init(&precomputed.storage.scratch_buff).allocator(),
-    };
-
-    board.fillBoard(precomputed.num_mines, rand);
-    board.setNeighbors();
-
-    return board;
 }
 
 /// Gets an optional pionter to the cell at the provided row and column.
@@ -285,8 +238,6 @@ fn setNeighbors(self: *Self) void {
 // -------------------- TESTS -------------------- //
 
 const gpa = std.heap.DebugAllocator(.{});
-
-const testing = std.testing;
 
 test "too-many-mines" {
     var alloc = gpa{};

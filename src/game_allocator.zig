@@ -25,7 +25,7 @@ pub fn getType(comptime fixed: bool) type {
             return .{ .impl = std.heap.FixedBufferAllocator.init(buff) };
         }
 
-        pub fn allocator(self: *Self) std.mem.Allocator {
+        pub inline fn allocator(self: *Self) std.mem.Allocator {
             return self.impl.allocator();
         }
     };
