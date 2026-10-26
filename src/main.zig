@@ -4,7 +4,7 @@ const print = std.debug.print;
 const Io = std.Io;
 
 const GameBoard = @import("game_board.zig");
-const GameIo = @import("game_io.zig");
+const GameIo = @import("game_io_interface.zig");
 const TerminalGameIo = @import("terminal_game_io.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -23,9 +23,9 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        const boardWidth = 15;
-        const boardHeight = 15;
-        const numMines = 99;
+        const boardWidth = 2;
+        const boardHeight = 2;
+        const numMines = 1;
 
         // WARNING: May need to change this to defer to the heap if stack size becomes an issue
         var buffer: [boardWidth * boardHeight * @sizeOf(GameBoard.Cell) * 2]u8 align(@alignOf(GameBoard.Cell)) = undefined;
@@ -33,36 +33,41 @@ pub fn main(init: std.process.Init) !void {
         break :else_branch try GameBoard.init(&buffer, boardWidth, boardHeight, numMines, rng_impl.interface());
     };
 
-    var gameIo = TerminalGameIo{};
-    const terminalGameIo: GameIo = gameIo.renderer();
+    comptime GameIo.validateGameIo(TerminalGameIo);
 
     gameLoop: while (true) {
-        try terminalGameIo.renderBoardDebug(&gameBoard);
-        const userAction = try terminalGameIo.getUserInput(init.io);
-        if (userAction.flag) {
-            gameBoard.toggleFlag(userAction.row, userAction.col);
-        } else {
-            switch (gameBoard.clickCell(userAction.row, userAction.col)) {
-                .Exploded => {
-                    print("OH NO. CELL AT {}, {} WAS A MINE!\n", .{userAction.row, userAction.col});
-                    break :gameLoop;
-                },
-                .Win => {
-                    print("YOU WIN!!!\n", .{});
-                    break :gameLoop;
-                },
-                .Safe => {
-                    print("Okay...\n", .{});
-                },
-                .Nop => {
-                    print("That did nothing...\n", .{});
-                },
-                .Invalid => {
-                    print("Click a valid cell please\n", .{});
-                },
-            }
-            print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
+        try TerminalGameIo.renderBoardDebug(&gameBoard);
+        const userAction = try TerminalGameIo.getUserInput(init.io);
+        if (userAction.flag) switch (gameBoard.flagCell(userAction.row, userAction.col)) {
+            .Invalid => {
+                print("FLAG RESULT INVALID\n", .{});
+            },
+            .Nop => {
+                print("FLAG REAULT NOP\n", .{});
+            },
+            .Safe => {
+                print("FLAG RESULT SAFE\n", .{});
+            },
+        } else switch (gameBoard.revealCell(userAction.row, userAction.col)) {
+            .Exploded => {
+                print("OH NO. CELL AT {}, {} WAS A MINE!\n", .{ userAction.row, userAction.col });
+                break :gameLoop;
+            },
+            .Win => {
+                print("YOU WIN!!!\n", .{});
+                break :gameLoop;
+            },
+            .Safe => {
+                print("Okay...\n", .{});
+            },
+            .Nop => {
+                print("That did nothing...\n", .{});
+            },
+            .Invalid => {
+                print("Click a valid cell please\n", .{});
+            },
         }
+        print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
     }
 
     _ = gameBoard.validate_neighbor_counts();

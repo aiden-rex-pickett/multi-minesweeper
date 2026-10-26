@@ -111,13 +111,28 @@ pub inline fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
 }
 
-/// Toggles the flag state for the cell with the provided row and column on the board, doing nothing if the row and column is invalid
-pub inline fn toggleFlag(self: Self, row: i32, col: i32) void {
-    if (self.getCell(row, col)) |cell| cell.flagged = !cell.flagged;
+/// Type returned by toggleFlag representing the result of the flag
+const FlagResult = enum {
+    Invalid,
+    Nop,
+    Safe,
+};
+
+/// Flags a cell, returning an enum representing what happened
+pub inline fn flagCell(self: *Self, row: i32, col: i32) FlagResult {
+    if (self.getCell(row, col)) |cell| {
+        if (!cell.revealed) {
+            cell.flagged = !cell.flagged;
+            return .Safe;
+        }
+        return .Nop;
+    }
+
+    return .Invalid;
 }
 
 /// Type returned by clickCell representing the result of the click
-pub const Result = enum {
+const RevealResult = enum {
     Exploded,
     Safe,
     Win,
@@ -125,20 +140,21 @@ pub const Result = enum {
     Nop,
 };
 
-/// Simulates clicking a cell
-pub fn clickCell(self: *Self, row: i32, col: i32) Result {
-    const cell = self.getCell(row, col) orelse return Result.Invalid;
-    if (cell.flagged or cell.revealed) return Result.Nop;
+/// Reveals a cell, returning an enum representing what happened
+pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
+    const cell = self.getCell(row, col) orelse return .Invalid;
+
+    if (cell.flagged or cell.revealed) return .Nop;
 
     cell.revealed = true;
-    if (cell.mine) return Result.Exploded;
+    if (cell.mine) return .Exploded;
 
     self.cellsLeft -= 1;
-    if (self.cellsLeft == 0) return Result.Win;
+    if (self.cellsLeft == 0) return .Win;
 
     // TODO: BFS flood fill here with scratch space;
 
-    return Result.Safe;
+    return .Safe;
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based
