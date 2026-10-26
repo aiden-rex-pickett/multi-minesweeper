@@ -6,6 +6,9 @@ const config = @import("config");
 
 const GameBoard = @import("game_board.zig");
 
+const buffer_size = if (config.width != null) config.width.? else 0 * if (config.height != null) config.height.? else 0 * @sizeOf(GameBoard.Cell) + if (config.width != null) config.width.? else 0 * if (config.height != null) config.height.? else 0 * @sizeOf(GameBoard.Pair);
+export var staticMem: [buffer_size]u8 = undefined;
+
 pub fn getType(comptime fixed: bool) type {
     return struct {
         const Self = @This();
@@ -14,13 +17,7 @@ pub fn getType(comptime fixed: bool) type {
 
         pub fn init(buff: []u8) Self {
             if (fixed) {
-                const precomputed = comptime precompute: {
-                    const globals = struct {
-                        pub threadlocal var staticMem: [config.width.? * config.height.? * @sizeOf(GameBoard.Cell) + config.width.? * config.height.? * @sizeOf(GameBoard.Pair)]u8 = undefined;
-                    };
-                    break :precompute .{ .storage = globals };
-                };
-                return .{ .impl = std.heap.FixedBufferAllocator.init(&precomputed.storage.staticMem) };
+                return .{ .impl = std.heap.FixedBufferAllocator.init(&staticMem) };
             }
             return .{ .impl = std.heap.FixedBufferAllocator.init(buff) };
         }
