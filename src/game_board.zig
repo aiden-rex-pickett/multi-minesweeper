@@ -106,13 +106,13 @@ pub fn comptime_init(rand: std.Random) Self {
 
 /// Gets an optional pionter to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
-pub fn getCell(self: Self, row: i32, col: i32) ?*Cell {
+pub inline fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
 }
 
 /// Toggles the flag state for the cell with the provided row and column on the board, doing nothing if the row and column is invalid
-pub fn toggleFlag(self: Self, row: i32, col: i32) void {
+pub inline fn toggleFlag(self: Self, row: i32, col: i32) void {
     if (self.getCell(row, col)) |cell| cell.flagged = !cell.flagged;
 }
 
@@ -128,12 +128,13 @@ pub const Result = enum {
 /// Simulates clicking a cell
 pub fn clickCell(self: *Self, row: i32, col: i32) Result {
     const cell = self.getCell(row, col) orelse return Result.Invalid;
-    if (cell.flagged) return Result.Nop;
+    if (cell.flagged or cell.revealed) return Result.Nop;
 
     cell.revealed = true;
-    self.cellsLeft -= 1;
-
     if (cell.mine) return Result.Exploded;
+
+    self.cellsLeft -= 1;
+    if (self.cellsLeft == 0) return Result.Win;
 
     // TODO: BFS flood fill here with scratch space;
 
@@ -141,7 +142,7 @@ pub fn clickCell(self: *Self, row: i32, col: i32) Result {
 }
 
 /// This function validates that the neighbor numbers for every mine are correct, based
-/// on the number of mine cells surrounding it
+/// on the number of mine cells surrounding it. For testing purposes and internal validation
 ///
 /// Note that this is only valid in so far as the mine bit is being set correctly
 pub fn validate_neighbor_counts(self: Self) bool {
@@ -283,7 +284,6 @@ test "mine-setup-validation" {
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     const rand = prng.random();
 
-    // 1000 different board shapes
     const num_shapes = 100;
     for (0..num_shapes) |_| {
         const width = rand.intRangeAtMost(u32, min_width, max_width);
@@ -359,6 +359,7 @@ test "flag-set-basic" {
                     try testing.expect(beforeVal == afterVal);
                 }
             }
+            try testing.expect(board.validate_neighbor_counts());
         }
     }
 }
@@ -404,14 +405,34 @@ test "flag-set-aftereffect" {
 }
 
 // TODO: Test for all the out of bounds being null for get mine
-// test "get-mines-out-of-bounds" {
-//     var alloc = gpa{};
-//     defer _ = alloc.deinit();
-//     const interface = alloc.allocator();
-//
-//     const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
-//     defer interface.free(buff);
-// }
+test "get-mines-out-of-bounds" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    for (0..100) |width| {
+        for (0..100) |height| {
+            const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), width * height * 2 * 2);
+            defer interface.free(buff);
+            var board = try Self.init(buff, @as(u32, @intCast(width)), @as(u32, @intCast(height)), 0, prng.random());
+            var r: i32 = -300;
+            while (r < 0) : (r += 1) {
+                var c: i32 = -300;
+                while (c < 0) : (c += 1) {
+                    try testing.expect(board.getCell(r, c) == null);
+                }
+            }
+            r = @intCast(width);
+            while (r < 300) : (r += 1) {
+                var c: i32 = @intCast(height);
+                while (c < 300) : (c += 1) {
+                    try testing.expect(board.getCell(r, c) == null);
+                }
+            }
+        }
+    }
+}
 
 // TODO: Add basic test for get mine functionality, and after you change it it's right, also returns correct pointer and changes in cell array
 test "get-mines-test" {
