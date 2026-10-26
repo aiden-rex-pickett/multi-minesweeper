@@ -1,34 +1,24 @@
 /// Terminal rendering and input interface for board game
-/// TODO: Change to have use decided at comptime instead of thru vtable interface
+/// TODO: Instead of using std.debug.print move to holding a file descriptor and printing/reading from
+/// that instead, should make it easier to adapt to a networked version send to the network
 const Self = @This();
 
 const GameBoard = @import("game_board.zig");
-const GameIo = @import("game_io.zig");
+const GameIo = @import("game_io_interface.zig");
 
 const std = @import("std");
 const print = std.debug.print;
 
-pub fn renderer(self: *Self) GameIo {
-    return .{ .ptr = self, .vtable = &.{
-        .renderBoard = renderBoard,
-        .renderBoardDebug = renderBoardDebug,
-        .getUserInput = getUserInput,
-    } };
+pub fn renderBoard(board: *const GameBoard) anyerror!void {
+    printBoard(board, comptime printCell);
 }
 
-pub fn renderBoard(ctx: *anyopaque, board: *const GameBoard) anyerror!void {
-    _ = ctx;
-    printBoard(board, printCell);
-}
-
-pub fn renderBoardDebug(ctx: *anyopaque, board: *const GameBoard) anyerror!void {
-    _ = ctx;
-    printBoard(board, printCellDebug);
+pub fn renderBoardDebug(board: *const GameBoard) anyerror!void {
+    printBoard(board, comptime printCellDebug);
 }
 
 /// Loops until user provides valid input to terminal
-pub fn getUserInput(ctx: *anyopaque, io: std.Io) anyerror!GameIo.Action {
-    _ = ctx;
+pub fn getUserInput(io: std.Io) anyerror!GameIo.Action {
     var inputBuffer: [1024]u8 = undefined;
     var stdin_read_wrap = std.Io.File.stdin().readerStreaming(io, &inputBuffer);
     const reader = &stdin_read_wrap.interface;
