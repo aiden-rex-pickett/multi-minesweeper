@@ -1,52 +1,44 @@
 const std = @import("std");
-const config = @import("config");
 const print = std.debug.print;
 const Io = std.Io;
 
+const config = @import("config");
+
+const GameAllocator = @import("game_allocator.zig");
 const GameBoard = @import("game_board.zig");
 const GameIo = @import("game_io_interface.zig");
 const TerminalGameIo = @import("terminal_game_io.zig");
 
 // TODO: Optimize buffer allocation to be as small as possible
 pub fn main(init: std.process.Init) !void {
-    const rng_impl: std.Random.IoSource = .{ .io = init.io };
+    const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
-    var GPA = std.heap.DebugAllocator(.{}){};
-    defer _ = GPA.deinit();
+    const boardWidth = 4;
+    const boardHeight = 4;
+    const numMines = 15;
 
-    var gameBoard: GameBoard = if (config.fixed)
-        GameBoard.comptime_init(rng_impl.interface())
-    else else_branch: {
-        comptime { // Compile-time error if compile-time board generation options provided without providing -Dfixed
-            const conf_opt = .{ .{
-                .name = "Compile-time option -Dheight set without -Dfixed=true set",
-                .val = config.height,
-            }, .{ .name = "Compile-time option -Dwidth set without -Dfixed=true set", .val = config.width }, .{ .name = "Compile-time option -Dnum_mines  set without -Dfixed=true set", .val = config.num_mines } };
-            for (conf_opt) |conf| {
-                if (conf.val) |_| @compileError(conf.name);
-            }
-        }
+    comptime checkComptimeArgs();
+    const comptimeInit = config.width != null and config.height != null and config.num_mines != null;
 
-        const boardWidth = 4;
-        const boardHeight = 4;
-        const numMines = 15;
+    // Buffer not used if comptime board being used, hence else [0]u8
+    // const buff: if (!comptimeInit) [boardWidth * boardHeight * @sizeOf(GameBoard.Cell) + boardWidth * boardHeight * @sizeOf(GameBoard.Pair)]u8 else [0]u8 = undefined;
+    // var allocImpl = (comptime GameAllocator.getType(comptimeInit)).init(&buff);
 
-        // WARNING: May need to change this to defer to the heap if stack size becomes an issue
-        // TODO: Dejankify this
-        // var buffer: [boardWidth * boardHeight * @sizeOf(GameBoard.Cell) + (boardWidth * boardHeight * @sizeOf(u64))]u8 align(@alignOf(GameBoard.Cell)) = undefined;
-        // var fba = std.heap.FixedBufferAllocator.init(&buffer);
-        //
-        // break :else_branch try GameBoard.init(fba.allocator(), boardWidth, boardHeight, numMines, rng_impl.interface());
+    var allocImpl = std.heap.DebugAllocator(.{}){};
+    defer _ = allocImpl.deinit();
 
-        break :else_branch try GameBoard.init(GPA.allocator(), boardWidth, boardHeight, numMines, rng_impl.interface());
-    };
+    var gameBoard = try GameBoard.init(allocImpl.allocator(), comptime if (!comptimeInit) boardWidth else config.width.?, comptime if (!comptimeInit) boardHeight else config.height.?, comptime if (!comptimeInit) numMines else config.num_mines.?, rngImpl.interface());
     defer gameBoard.deinit();
 
-    comptime GameIo.validateGameIo(TerminalGameIo);
+    try runGame(&gameBoard, TerminalGameIo, init.io);
+}
+
+fn runGame(gameBoard: *GameBoard, GameIoImpl: anytype, io: std.Io) anyerror!void {
+    comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try TerminalGameIo.renderBoardDebug(&gameBoard);
-        const userAction = try TerminalGameIo.getUserInput(init.io);
+        try GameIoImpl.renderBoardDebug(gameBoard);
+        const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) switch (gameBoard.toggleFlag(userAction.row, userAction.col)) {
             .Invalid => {
                 print("FLAG RESULT INVALID\n", .{});
@@ -78,4 +70,26 @@ pub fn main(init: std.process.Init) !void {
         }
         print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
     }
+}
+
+/// This function validates at compile time that the provided compile time arguments are valid
+inline fn checkComptimeArgs() void {
+    var check: comptime_int = 0;
+    if (config.width != null) check += 1;
+    if (config.height != null) check += 1;
+    if (config.num_mines != null) check += 1;
+
+    if (check == 0) return;
+
+    if (check != 3)
+        @compileError("Comptime board initalization attempted without providing all of the following arguments: -Dwidth, -Dheight, and -Dnum_mines arguments");
+
+    if (config.width.? <= 0)
+        @compileError("Comptime board initalization attempted with 0 width board, make sure -Dwidth is greater than 0");
+
+    if (config.height.? <= 0)
+        @compileError("Comptime board initalization attempted with 0 height board, make sure -Dheight is greater than 0");
+
+    if (config.num_mines.? > config.width.? * config.height.?)
+        @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
 }
