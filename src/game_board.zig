@@ -123,7 +123,6 @@ pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
 
 /// TODO: Starts a flood fill at the provided coordinates
 fn floodFill(self: *Self, row: i32, col: i32) void {
-    // TODO: Need more space for array list because we tracking indicies and not cells.
     var stack = self.allocator.alloc(Pair, self.width * self.height) catch unreachable;
     defer self.allocator.free(stack);
     stack[0] = Pair{ .row = row, .col = col };
@@ -369,7 +368,6 @@ test "flag-set-aftereffect" {
     }
 }
 
-// TODO: Test for all the out of bounds being null for get mine
 test "get-mines-out-of-bounds" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
@@ -404,11 +402,7 @@ test "get-mines-test" {
     // defer alloc.deinit();
     // const interface = alloc.allocator();
     //
-    // const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 20 * 20 * 2 * 2);
-    // defer interface.free(buff);
-    //
     // var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     //
-    // // TODO: Finish, after set mine is built out
-    // var game_board: Self = .init(buff, 10, 10, 0, prng.random());
+    // var game_board: Self = .init(interface, 10, 10, 0, prng.random());
 }

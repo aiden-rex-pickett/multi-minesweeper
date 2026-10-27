@@ -10,6 +10,7 @@ const GameIo = @import("game_io_interface.zig");
 const TerminalGameIo = @import("terminal_game_io.zig");
 
 // TODO: Optimize buffer allocation to be as small as possible
+// Would also require refactoring interface to check on instance instead of type maybe?
 pub fn main(init: std.process.Init) !void {
     const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
