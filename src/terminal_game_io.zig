@@ -37,16 +37,23 @@ pub fn getUserInput(io: std.Io) anyerror!GameIo.Action {
 
 /// Prints out board using whatever cell print function is given
 fn printBoard(board: *const GameBoard, cellPrint: fn (cell: GameBoard.Cell) void) void {
+    print("   ", .{});
+    for (0..board.width) |i| {
+        print(" {d:^3}", .{i});
+    }
+    print("\n", .{});
+    print("   ", .{});
     for (0..board.width) |_| {
         print("----", .{});
     }
     print("\n", .{});
     for (0..board.height) |row| {
+        print("{d:^3}", .{row});
         for (0..board.width) |col| {
             const cell = board.getCell(@intCast(row), @intCast(col)).?;
             cellPrint(cell.*);
         }
-        print("|\n", .{});
+        print("|\n   ", .{});
         for (0..board.width) |_| {
             print("----", .{});
         }

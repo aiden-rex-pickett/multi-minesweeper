@@ -9,16 +9,16 @@
 //      the flood fill would take no memory. Can still use comptime baked-in memory too if I want. Maybe build as other file
 
 const std = @import("std");
-const mine_options = @import("config");
 const print = std.debug.print;
+const testing = std.testing;
 
 const Self = @This();
 
-cells: []Cell,
-width: u32,
-height: u32,
-cellsLeft: u32,
-scratchAllocator: std.heap.FixedBufferAllocator,
+cells: []Cell, // Array of cells representing the board
+width: u32, // Board width
+height: u32, // Board height
+cellsLeft: u32, // Number of unrevealed non-mine cells left
+allocator: std.mem.Allocator, // Allocator that allocated the array of cells and that can be used for flood fill scratch memory
 
 /// The packed struct that represents a minesweeper cell
 pub const Cell = packed struct(u16) {
@@ -30,27 +30,26 @@ pub const Cell = packed struct(u16) {
     pad: u1 = 0,
 };
 
+pub const Pair = struct {
+    row: i32,
+    col: i32,
+};
+
 /// Initalizes a new Board of the provided width, height, and number of mines using the provided buffer.
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
-pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_mines: u32, rand: std.Random) error{ UndersizedBuffer, TooManyMines }!Self {
-    if (buffer.len < width * height * @sizeOf(Cell) * 2) {
-        return error.UndersizedBuffer;
-    }
-
+pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, num_mines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines }!Self {
     if (num_mines > width * height) {
         return error.TooManyMines;
     }
 
-    const cellsSize = width * height * @sizeOf(Cell);
-
     var board = Self{
-        .cells = std.mem.bytesAsSlice(Cell, buffer[0..cellsSize]),
+        .cells = try alloc.alloc(Cell, width * height),
         .width = width,
         .height = height,
         .cellsLeft = width * height - num_mines,
-        .scratchAllocator = .init(buffer[cellsSize..]),
+        .allocator = alloc,
     };
 
     board.fillBoard(num_mines, rand);
@@ -58,57 +57,20 @@ pub fn init(buffer: []align(@alignOf(Cell)) u8, width: u32, height: u32, num_min
     return board;
 }
 
-/// Initalizes the board described by compile arguments that is baked into the executable.
-/// This simply amounts to shuffling the mines with an entropy source at runtime, all other initalization
-/// steps are handled at comptime if this option is used
-pub fn comptime_init(rand: std.Random) Self {
-    const precomputed = comptime precompute: {
-        if (mine_options.width == null or mine_options.height == null or mine_options.num_mines == null)
-            @compileError("Comptime board initalization (-Dfixed=true) attempted without providing all of the following arguments: -Dwidth, -Dheight, and -Dnum_mines arguments");
-
-        const BoardConfig = struct {
-            width: u32,
-            height: u32,
-            num_mines: u32,
-        };
-
-        const selected: BoardConfig = .{ .width = mine_options.width.?, .height = mine_options.height.?, .num_mines = mine_options.num_mines.? };
-
-        if (selected.num_mines > selected.width * selected.height)
-            @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
-
-        const globals = struct {
-            pub threadlocal var buff: [selected.width * selected.height]Cell = undefined;
-            pub threadlocal var scratch_buff: [selected.width * selected.height * @sizeOf(Cell)]u8 = undefined;
-        };
-
-        break :precompute .{
-            .width = selected.width,
-            .height = selected.height,
-            .num_mines = selected.num_mines,
-            .storage = globals,
-        };
-    };
-
-    var board = Self{
-        .cells = &precomputed.storage.buff,
-        .width = precomputed.width,
-        .height = precomputed.height,
-        .cellsLeft = precomputed.height * precomputed.width - precomputed.num_mines,
-        .scratchAllocator = .init(&precomputed.storage.scratch_buff),
-    };
-
-    board.fillBoard(precomputed.num_mines, rand);
-    board.setNeighbors();
-
-    return board;
+pub fn deinit(self: Self) void {
+    self.allocator.free(self.cells);
 }
 
 /// Gets an optional pionter to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
 pub inline fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
-    return &self.cells[@as(u32, @intCast(row)) * self.width + @as(u32, @intCast(col))];
+    return &self.cells[getCellIndex(row, col, self.width)];
+}
+
+/// Basically a macro for doing 2d indexing in 1d array.
+inline fn getCellIndex(row: i32, col: i32, width: u32) u32 {
+    return @as(u32, @intCast(row)) * width + @as(u32, @intCast(col));
 }
 
 /// Type returned by toggleFlag representing the result of the flag
@@ -119,7 +81,7 @@ const FlagResult = enum {
 };
 
 /// Flags a cell, returning an enum representing what happened
-pub inline fn flagCell(self: *Self, row: i32, col: i32) FlagResult {
+pub inline fn toggleFlag(self: *Self, row: i32, col: i32) FlagResult {
     if (self.getCell(row, col)) |cell| {
         if (!cell.revealed) {
             cell.flagged = !cell.flagged;
@@ -127,7 +89,6 @@ pub inline fn flagCell(self: *Self, row: i32, col: i32) FlagResult {
         }
         return .Nop;
     }
-
     return .Invalid;
 }
 
@@ -150,14 +111,57 @@ pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
     if (cell.mine) return .Exploded;
 
     self.cellsLeft -= 1;
-    if (self.cellsLeft == 0) return .Win;
 
-    // TODO: BFS flood fill here with scratch space;
+    if (cell.neighbors == 0) {
+        // self.floodFill(row, col);
+    }
+
+    if (self.cellsLeft == 0) return .Win;
 
     return .Safe;
 }
 
-/// This function validates that the neighbor numbers for every mine are correct, based
+/// TODO: Starts a flood fill at the provided coordinates
+fn floodFill(self: *Self, row: i32, col: i32) void {
+    var stack = self.allocator.alloc(Pair, self.width * self.height) catch unreachable;
+    defer self.allocator.free(stack);
+    stack[0] = Pair{ .row = row, .col = col };
+
+    while (stack.pop()) |pair| {
+        const cellIndex = getCellIndex(pair.row, pair.col, self.width);
+        const cell = &self.cells[cellIndex];
+
+        cell.revealed = true;
+        self.cellsLeft -= 1;
+
+        const dArr: [8]Pair = .{
+            Pair{ .row = 1, .col = 0 },
+            Pair{ .row = 1, .col = 1 },
+            Pair{ .row = 0, .col = 1 },
+            Pair{ .row = -1, .col = 1 },
+            Pair{ .row = -1, .col = 0 },
+            Pair{ .row = -1, .col = -1 },
+            Pair{ .row = 0, .col = -1 },
+            Pair{ .row = 1, .col = -1 },
+        };
+
+        if (cell.neighbors == 0) {
+            for (dArr) |dPair| {
+                const newPair = Pair{ .row = pair.row + dPair.row, .col = pair.col + dPair.col };
+                if (self.getCell(newPair.row, newPair.col)) |newCell| {
+                    if (!newCell.revealed) {
+                        print("stack size: {}\n", .{stack.items.len});
+                        stack.append(self.alloc, newPair) catch {
+                            unreachable;
+                        };
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// this function validates that the neighbor numbers for every mine are correct, based
 /// on the number of mine cells surrounding it. For testing purposes and internal validation
 ///
 /// Note that this is only valid in so far as the mine bit is being set correctly
@@ -234,58 +238,16 @@ fn setNeighbors(self: *Self) void {
 
 const gpa = std.heap.DebugAllocator(.{});
 
-const testing = std.testing;
-
-test "buffer-too-small-error" {
-    var alloc = gpa{};
-    defer _ = alloc.deinit();
-    const interface = alloc.allocator();
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    var buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 50);
-    { // Basic test
-        defer interface.free(buff);
-
-        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20, prng.random()));
-    }
-
-    { // Size of board, but not enough scratch space
-        buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 2);
-        defer interface.free(buff);
-
-        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 10, 20, prng.random()));
-    }
-
-    { // Same size, but slightly larger board
-        buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
-        defer interface.free(buff);
-
-        try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, 20, prng.random()));
-    }
-
-    { // Doesn't change with number of mines
-        buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 10 * 10 * 4);
-        defer interface.free(buff);
-
-        for (0..110) |numMines| {
-            try testing.expectError(error.UndersizedBuffer, Self.init(buff, 10, 11, @as(u32, @intCast(numMines)), prng.random()));
-        }
-    }
-}
-
 test "too-many-mines" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
-    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 20 * 20 * 2 * 2);
-    defer interface.free(buff);
-
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     for (0..20) |width| {
         for (0..20) |height| {
             for ((width * height + 1)..1000) |numMines| {
-                try testing.expectError(error.TooManyMines, Self.init(buff, @as(u32, @intCast(width)), @as(u32, @intCast(height)), @as(u32, @intCast(numMines)), prng.random()));
+                try testing.expectError(error.TooManyMines, Self.init(interface, @as(u32, @intCast(width)), @as(u32, @intCast(height)), @as(u32, @intCast(numMines)), prng.random()));
             }
         }
     }
@@ -312,8 +274,11 @@ test "mine-setup-validation" {
 
         const board_test = struct {
             // Testing function
-            fn testBoard(board_width: u32, board_height: u32, num_mines: u32, buffer: []align(@alignOf(Cell)) u8, random: std.Random, result: *bool) !void {
-                var game_board = try Self.init(buffer, board_width, board_height, num_mines, random);
+            fn testBoard(board_width: u32, board_height: u32, num_mines: u32, random: std.Random, result: *bool) !void {
+                var alloc = gpa{};
+                defer _ = alloc.deinit();
+                var game_board = try Self.init(alloc.allocator(), board_width, board_height, num_mines, random);
+                defer game_board.deinit();
                 result.* = game_board.validate_neighbor_counts();
             }
         };
@@ -322,18 +287,9 @@ test "mine-setup-validation" {
         var results: [num_threads]bool = undefined;
 
         {
-            var alloc = gpa{};
-            defer _ = alloc.deinit();
-            const interface = alloc.allocator();
-
-            var real_alloc: std.heap.ArenaAllocator = .init(interface);
-            defer real_alloc.deinit();
-            var real_interface = real_alloc.allocator();
-
             var i: u32 = 1;
             while (i < num_threads + 1) : (i += 1) {
-                const buff = try real_interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), width * height * 2 * 2);
-                threads[i - 1] = try Thread.spawn(.{}, board_test.testBoard, .{ width, height, @as(u32, @intCast(i)) * mines_step, buff, rand, &results[i - 1] });
+                threads[i - 1] = try Thread.spawn(.{}, board_test.testBoard, .{ width, height, @as(u32, @intCast(i)) * mines_step, rand, &results[i - 1] });
             }
 
             for (threads) |thread| {
@@ -352,17 +308,15 @@ test "flag-set-basic" {
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
-    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
-    defer interface.free(buff);
-
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    var board = try Self.init(buff, 30, 30, 99, prng.random());
+    var board = try Self.init(interface, 30, 30, 99, prng.random());
+    defer board.deinit();
     for (0..30) |row| {
         for (0..30) |col| {
             const r = @as(i32, @intCast(row));
             const c = @as(i32, @intCast(col));
             const before = board.getCell(r, c).?.*;
-            board.toggleFlag(r, c);
+            _ = board.toggleFlag(r, c);
             const after = board.getCell(r, c).?.*;
             const fields = std.meta.fields(Cell);
 
@@ -385,16 +339,10 @@ test "flag-set-aftereffect" {
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
-    const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 30 * 30 * 2 * 2);
-    defer interface.free(buff);
-
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    var board = try Self.init(buff, 30, 30, 99, prng.random());
+    var board = try Self.init(interface, 30, 30, 99, prng.random());
+    defer board.deinit();
 
-    const Pair = struct {
-        row: usize,
-        col: usize,
-    };
     var flagSet = std.AutoHashMap(Pair, void).init(interface);
     defer flagSet.deinit();
     for (0..30) |row| {
@@ -402,8 +350,8 @@ test "flag-set-aftereffect" {
             if (prng.random().intRangeAtMost(i32, 0, 10) < 7) {
                 const r = @as(i32, @intCast(row));
                 const c = @as(i32, @intCast(col));
-                try flagSet.put(.{ .row = row, .col = col }, {});
-                board.toggleFlag(r, c);
+                try flagSet.put(.{ .row = @as(i32, @intCast(row)), .col = @as(i32, @intCast(col)) }, {});
+                _ = board.toggleFlag(r, c);
             }
         }
     }
@@ -411,7 +359,7 @@ test "flag-set-aftereffect" {
     for (0..30) |row| {
         for (0..30) |col| {
             const cell = board.getCell(@intCast(row), @intCast(col)).?;
-            if (flagSet.contains(Pair{ .row = row, .col = col })) {
+            if (flagSet.contains(Pair{ .row = @as(i32, @intCast(row)), .col = @as(i32, @intCast(col)) })) {
                 try testing.expect(cell.flagged);
             } else {
                 try testing.expect(!cell.flagged);
@@ -420,7 +368,6 @@ test "flag-set-aftereffect" {
     }
 }
 
-// TODO: Test for all the out of bounds being null for get mine
 test "get-mines-out-of-bounds" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
@@ -429,20 +376,19 @@ test "get-mines-out-of-bounds" {
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     for (0..100) |width| {
         for (0..100) |height| {
-            const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), width * height * 2 * 2);
-            defer interface.free(buff);
-            var board = try Self.init(buff, @as(u32, @intCast(width)), @as(u32, @intCast(height)), 0, prng.random());
-            var r: i32 = -300;
+            var board = try Self.init(interface, @as(u32, @intCast(width)), @as(u32, @intCast(height)), 0, prng.random());
+            defer board.deinit();
+            var r: i32 = -100;
             while (r < 0) : (r += 1) {
-                var c: i32 = -300;
+                var c: i32 = -100;
                 while (c < 0) : (c += 1) {
                     try testing.expect(board.getCell(r, c) == null);
                 }
             }
             r = @intCast(width);
-            while (r < 300) : (r += 1) {
+            while (r < 200) : (r += 1) {
                 var c: i32 = @intCast(height);
-                while (c < 300) : (c += 1) {
+                while (c < 200) : (c += 1) {
                     try testing.expect(board.getCell(r, c) == null);
                 }
             }
@@ -456,11 +402,7 @@ test "get-mines-test" {
     // defer alloc.deinit();
     // const interface = alloc.allocator();
     //
-    // const buff = try interface.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(2), 20 * 20 * 2 * 2);
-    // defer interface.free(buff);
-    //
     // var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     //
-    // // TODO: Finish, after set mine is built out
-    // var game_board: Self = .init(buff, 10, 10, 0, prng.random());
+    // var game_board: Self = .init(interface, 10, 10, 0, prng.random());
 }
