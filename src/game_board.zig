@@ -503,3 +503,51 @@ test "flood_fill_fills" {
         }
     }
 }
+
+test "flag_revealed_nop" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try Self.init(interface, 10, 10, 9, prng.random());
+    defer game_board.deinit();
+
+    for (0..game_board.cells.len) |i| {
+        const cell = &game_board.cells[i];
+        if (!cell.mine) {
+            cell.flagged = true;
+            break;
+        }
+    }
+
+    var r: i32 = 0;
+    for (0..10) |i| {
+        if (game_board.getCell(@as(i32, @intCast(i)), @as(i32, @intCast(i)))) |validCell| {
+            if (!validCell.mine and !validCell.flagged) {
+                r = @as(i32, @intCast(i));
+                break;
+            }
+        }
+    }
+
+    try testing.expect(try game_board.revealCell(r, r) == .Safe);
+    try testing.expect(game_board.toggleFlag(r, r) == .Nop);
+}
+
+test "flood_fill_doesnt_hit_flags" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try Self.init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+    const before = if (game_board.getCell(4, 4)) |cell| cell else unreachable;
+    try testing.expect(game_board.toggleFlag(4, 4) == .Safe);
+    try testing.expect(try game_board.revealCell(0, 0) != .Win);
+    try testing.expect(before == if (game_board.getCell(4, 4)) |cell| cell else unreachable);
+    try testing.expect(game_board.validate_neighbor_counts());
+}
