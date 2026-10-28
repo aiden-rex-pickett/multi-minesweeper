@@ -14,6 +14,8 @@ const testing = std.testing;
 
 const Self = @This();
 
+const MAX_DIMENSION: u32 = 10_000;
+
 cells: []Cell, // Array of cells representing the board
 width: u32, // Board width
 height: u32, // Board height
@@ -39,8 +41,12 @@ pub const Pair = struct {
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
-pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, num_mines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines }!Self {
-    if (num_mines > width * height) {
+pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, numMines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
+    const totalCells, const overflow = @mulWithOverflow(width, height);
+    if (overflow == 1 or width > MAX_DIMENSION or height > MAX_DIMENSION or width == 0 or height == 0)
+        return error.InvalidDimensions;
+
+    if (numMines > width * height) {
         return error.TooManyMines;
     }
 
@@ -48,12 +54,12 @@ pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, num_mines: u32, r
         .cells = try alloc.alloc(Cell, width * height),
         .width = width,
         .height = height,
-        .cellsLeft = width * height - num_mines,
+        .cellsLeft = totalCells - numMines,
         .allocator = alloc,
     };
 
-    board.fillBoard(num_mines, rand);
-    board.setNeighbors();
+    board.fillBoard(numMines, rand);
+    board.setNeighborsAll();
     return board;
 }
 
@@ -102,7 +108,7 @@ const RevealResult = enum {
 };
 
 /// Reveals a cell, returning an enum representing what happened
-pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
+pub fn revealCell(self: *Self, row: i32, col: i32) error{OutOfMemory}!RevealResult {
     const cell = self.getCell(row, col) orelse return .Invalid;
 
     if (cell.flagged or cell.revealed) return .Nop;
@@ -113,7 +119,7 @@ pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
     self.cellsLeft -= 1;
 
     if (cell.neighbors == 0) {
-        self.floodFill(@as(u32, @intCast(row)), @as(u32, @intCast(col)));
+        try self.floodFill(@as(u32, @intCast(row)), @as(u32, @intCast(col)));
     }
 
     if (self.cellsLeft == 0) return .Win;
@@ -122,8 +128,8 @@ pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
 }
 
 /// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
-fn floodFill(self: *Self, row: u32, col: u32) void {
-    var stack = self.allocator.alloc(u32, self.width * self.height) catch unreachable;
+fn floodFill(self: *Self, row: u32, col: u32) error{OutOfMemory}!void {
+    var stack = try self.allocator.alloc(u32, self.width * self.height);
     defer self.allocator.free(stack);
     stack[0] = getCellIndex(row, col, self.width);
 
@@ -216,26 +222,26 @@ fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
 
 /// Sets the neighbors field for each of the Cells in the board, filling out the numbers properly
 /// To be used after fillBoard is called on a fresh board
-fn setNeighbors(self: *Self) void {
+fn setNeighborsAll(self: *Self) void {
     for (self.cells, 0..) |cell, i| {
         if (!cell.mine) continue;
         const row = i / self.width;
         const col = i % self.width;
+        self.setNeighbors(@as(i32, @intCast(row)), @as(i32, @intCast(col)));
+    }
+}
 
-        var dy: i32 = -1;
-        while (dy <= 1) : (dy += 1) {
-            const r = @as(i32, @intCast(row)) + dy;
-            if (r < 0 or r >= self.height) continue;
+/// Sets the surrounding 8 neighbors of a single cell
+fn setNeighbors(self: *Self, row: i32, col: i32) void {
+    var dy: i32 = -1;
+    while (dy <= 1) : (dy += 1) {
+        const r = row + dy;
+        var dx: i32 = -1;
+        while (dx <= 1) : (dx += 1) {
+            if (dy == 0 and dx == 0) continue;
+            const c = col + dx;
 
-            var dx: i32 = -1;
-            while (dx <= 1) : (dx += 1) {
-                if (dy == 0 and dx == 0) continue;
-                const c = @as(i32, @intCast(col)) + dx;
-                if (c < 0 or c >= self.width) continue;
-
-                const index = @as(usize, @intCast(r)) * @as(usize, @intCast(self.width)) + @as(usize, @intCast(c));
-                self.cells[index].neighbors += 1;
-            }
+            if (self.getCell(r, c)) |cell| cell.neighbors += 1;
         }
     }
 }
@@ -250,8 +256,8 @@ test "too-many-mines" {
     const interface = alloc.allocator();
 
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    for (0..20) |width| {
-        for (0..20) |height| {
+    for (1..20) |width| {
+        for (1..20) |height| {
             for ((width * height + 1)..1000) |numMines| {
                 try testing.expectError(error.TooManyMines, Self.init(interface, @as(u32, @intCast(width)), @as(u32, @intCast(height)), @as(u32, @intCast(numMines)), prng.random()));
             }
@@ -380,8 +386,8 @@ test "get-mines-out-of-bounds" {
     const interface = alloc.allocator();
 
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    for (0..100) |width| {
-        for (0..100) |height| {
+    for (1..100) |width| {
+        for (1..100) |height| {
             var board = try Self.init(interface, @as(u32, @intCast(width)), @as(u32, @intCast(height)), 0, prng.random());
             defer board.deinit();
             var r: i32 = -100;
@@ -402,13 +408,104 @@ test "get-mines-out-of-bounds" {
     }
 }
 
-// TODO: Add basic test for get mine functionality, and after you change it it's right, also returns correct pointer and changes in cell array
-test "get-mines-test" {
-    // var alloc = gpa{};
-    // defer alloc.deinit();
-    // const interface = alloc.allocator();
-    //
-    // var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    //
-    // var game_board: Self = .init(interface, 10, 10, 0, prng.random());
+test "invalid_dimension_low" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+    try testing.expectError(error.InvalidDimensions, Self.init(interface, 0, 0, 0, prng.random()));
+    try testing.expectError(error.InvalidDimensions, Self.init(interface, 10, 0, 0, prng.random()));
+    try testing.expectError(error.InvalidDimensions, Self.init(interface, 0, 10, 0, prng.random()));
+}
+
+test "invalid_dimension_high" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    for (1..100) |width| {
+        for (1..100) |height| {
+            try testing.expectError(error.InvalidDimensions, Self.init(interface, MAX_DIMENSION + @as(u32, @intCast(width)), MAX_DIMENSION + @as(u32, @intCast(height)), 0, prng.random()));
+        }
+    }
+}
+
+test "toggle_flag_toggle" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+
+    for (0..10) |row| {
+        for (0..10) |col| {
+            const r = @as(i32, @intCast(row));
+            const c = @as(i32, @intCast(col));
+            const before = game_board.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), 10)];
+            _ = game_board.toggleFlag(r, c);
+            _ = game_board.toggleFlag(r, c);
+            try testing.expect(@as(u16, @bitCast(before)) == @as(u16, @bitCast(game_board.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), 10)])));
+            try testing.expect(game_board.validate_neighbor_counts());
+        }
+    }
+}
+
+test "get_cell_mutable_pointer" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+
+    const cell = game_board.getCell(0, 0) orelse unreachable;
+    const before = game_board.cells[0];
+    cell.team = 10;
+    try testing.expect(10 == game_board.cells[0].team);
+    try testing.expect(before.flagged == game_board.cells[0].flagged);
+    try testing.expect(before.mine == game_board.cells[0].mine);
+    try testing.expect(before.revealed == game_board.cells[0].revealed);
+    try testing.expect(before.neighbors == game_board.cells[0].neighbors);
+    try testing.expect(before.pad == game_board.cells[0].pad);
+}
+
+test "mine_click_looses" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 1, 1, 1, prng.random());
+    defer game_board.deinit();
+
+    try testing.expect(try game_board.revealCell(0, 0) == .Exploded);
+    try testing.expect(game_board.cells[0].mine and game_board.cells[0].revealed);
+}
+
+test "flood_fill_fills" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    for (0..10) |row| {
+        for (0..10) |col| {
+            var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+            defer game_board.deinit();
+            try testing.expect(try game_board.revealCell(@as(i32, @intCast(row)), @as(i32, @intCast(col))) == .Win);
+            for (game_board.cells) |cell| {
+                try testing.expect(cell.revealed);
+            }
+        }
+    }
 }
