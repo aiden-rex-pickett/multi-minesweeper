@@ -65,12 +65,12 @@ pub fn deinit(self: Self) void {
 /// If the row and column are not valid the optional is empty, else the optional is populated
 pub inline fn getCell(self: Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
-    return &self.cells[getCellIndex(row, col, self.width)];
+    return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
 }
 
 /// Basically a macro for doing 2d indexing in 1d array.
-inline fn getCellIndex(row: i32, col: i32, width: u32) u32 {
-    return @as(u32, @intCast(row)) * width + @as(u32, @intCast(col));
+inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
+    return row * width + col;
 }
 
 /// Type returned by toggleFlag representing the result of the flag
@@ -113,7 +113,7 @@ pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
     self.cellsLeft -= 1;
 
     if (cell.neighbors == 0) {
-        // self.floodFill(row, col);
+        self.floodFill(@as(u32, @intCast(row)), @as(u32, @intCast(col)));
     }
 
     if (self.cellsLeft == 0) return .Win;
@@ -121,42 +121,48 @@ pub fn revealCell(self: *Self, row: i32, col: i32) RevealResult {
     return .Safe;
 }
 
-/// TODO: Starts a flood fill at the provided coordinates
-fn floodFill(self: *Self, row: i32, col: i32) void {
-    var stack = self.allocator.alloc(Pair, self.width * self.height) catch unreachable;
+/// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
+fn floodFill(self: *Self, row: u32, col: u32) void {
+    var stack = self.allocator.alloc(u32, self.width * self.height) catch unreachable;
     defer self.allocator.free(stack);
-    stack[0] = Pair{ .row = row, .col = col };
+    stack[0] = getCellIndex(row, col, self.width);
 
-    while (stack.pop()) |pair| {
-        const cellIndex = getCellIndex(pair.row, pair.col, self.width);
-        const cell = &self.cells[cellIndex];
+    var stackTopNext: usize = 1;
 
-        cell.revealed = true;
-        self.cellsLeft -= 1;
+    while (stackTopNext > 0) {
+        const cellIndex = stack[stackTopNext - 1];
+        stackTopNext -= 1;
 
-        const dArr: [8]Pair = .{
-            Pair{ .row = 1, .col = 0 },
-            Pair{ .row = 1, .col = 1 },
-            Pair{ .row = 0, .col = 1 },
-            Pair{ .row = -1, .col = 1 },
-            Pair{ .row = -1, .col = 0 },
-            Pair{ .row = -1, .col = -1 },
-            Pair{ .row = 0, .col = -1 },
-            Pair{ .row = 1, .col = -1 },
-        };
+        if (self.cells[cellIndex].neighbors == 0) self.addValidNeighbors(cellIndex, stack, &stackTopNext);
+    }
+}
 
-        if (cell.neighbors == 0) {
-            for (dArr) |dPair| {
-                const newPair = Pair{ .row = pair.row + dPair.row, .col = pair.col + dPair.col };
-                if (self.getCell(newPair.row, newPair.col)) |newCell| {
-                    if (!newCell.revealed) {
-                        print("stack size: {}\n", .{stack.items.len});
-                        stack.append(self.alloc, newPair) catch {
-                            unreachable;
-                        };
-                    }
-                }
-            }
+/// Adds all valid neighbors of a cell to the given stack, marking as revealed on push
+inline fn addValidNeighbors(self: *Self, cellIndex: u32, stack: []u32, stackTopNext: *usize) void {
+    const width = self.width;
+
+    const row = cellIndex / width;
+    const col = cellIndex % width;
+
+    const directions = [_]struct { dr: i32, dc: i32 }{
+        .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
+        .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
+        .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
+    };
+    for (directions) |direction| {
+        const newRowSigned: i32 = @as(i32, @intCast(row)) + direction.dr;
+        const newColSigned: i32 = @as(i32, @intCast(col)) + direction.dc;
+
+        if (newRowSigned < 0 or newRowSigned >= self.height or newColSigned < 0 or newColSigned >= self.width) continue;
+
+        const newIndex = @as(u32, @intCast(newRowSigned)) * self.width + @as(u32, @intCast(newColSigned));
+        const newCell = &self.cells[newIndex];
+
+        if (!newCell.revealed and !newCell.flagged) {
+            newCell.revealed = true;
+            self.cellsLeft -= 1;
+            stack[stackTopNext.*] = newIndex;
+            stackTopNext.* += 1;
         }
     }
 }

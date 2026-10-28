@@ -14,19 +14,19 @@ const TerminalGameIo = @import("terminal_game_io.zig");
 pub fn main(init: std.process.Init) !void {
     const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
-    const boardWidth = 4;
-    const boardHeight = 4;
-    const numMines = 15;
+    const boardWidth = 5;
+    const boardHeight = 5;
+    const numMines = 3;
 
     comptime checkComptimeArgs();
     const comptimeInit = config.width != null and config.height != null and config.num_mines != null;
 
     // Buffer not used if comptime board being used, hence else [0]u8
-    var buff: if (!comptimeInit) [boardWidth * boardHeight * @sizeOf(GameBoard.Cell) + boardWidth * boardHeight * @sizeOf(GameBoard.Pair)]u8 else [0]u8 = undefined;
-    var allocImpl = (comptime GameAllocator.getType(comptimeInit)).init(&buff);
+    // var buff: if (!comptimeInit) [boardWidth * boardHeight * @sizeOf(GameBoard.Cell) + boardWidth * boardHeight * @sizeOf(GameBoard.Pair)]u8 else [0]u8 = undefined;
+    // var allocImpl = (comptime GameAllocator.getType(comptimeInit)).init(&buff);
 
-    // var allocImpl = std.heap.DebugAllocator(.{}){};
-    // defer _ = allocImpl.deinit();
+    var allocImpl = std.heap.DebugAllocator(.{}){};
+    defer _ = allocImpl.deinit();
 
     var gameBoard = try GameBoard.init(allocImpl.allocator(), comptime if (!comptimeInit) boardWidth else config.width.?, comptime if (!comptimeInit) boardHeight else config.height.?, comptime if (!comptimeInit) numMines else config.num_mines.?, rngImpl.interface());
     defer gameBoard.deinit();
