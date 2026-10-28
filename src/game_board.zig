@@ -26,11 +26,6 @@ pub const Cell = packed struct(u16) {
     pad: u1 = 0,
 };
 
-pub const Pair = struct {
-    row: i32,
-    col: i32,
-};
-
 /// Initalizes a new Board of the provided width, height, and number of mines using the provided buffer.
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
@@ -348,6 +343,11 @@ test "flag-set-aftereffect" {
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
     var board = try Self.init(interface, 30, 30, 99, prng.random());
     defer board.deinit();
+
+    const Pair = struct {
+        row: i32,
+        col: i32,
+    };
 
     var flagSet = std.AutoHashMap(Pair, void).init(interface);
     defer flagSet.deinit();
