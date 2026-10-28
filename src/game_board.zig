@@ -2,12 +2,6 @@
 //! It contains an array of cells, as well as an allocator
 //! for pointing to some scratch space to do bfs for flood fill
 
-// TODO:
-//   1. SIMD Mine counting, using 8 shifted registers and then accumulate to that row
-//   2. SIMD Flood fill, which will require massive architecture overhaul to store SOA with 0_count bitmask, mines bitmask,
-//      and revealed bitmask. Then a u8 array to store computed mine adjacency numbers. But if I can, it would be sick as
-//      the flood fill would take no memory. Can still use comptime baked-in memory too if I want. Maybe build as other file
-
 const std = @import("std");
 const print = std.debug.print;
 const testing = std.testing;
