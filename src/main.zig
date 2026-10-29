@@ -4,9 +4,8 @@ const Io = std.Io;
 
 const config = @import("config");
 
-const GameAllocator = @import("game_allocator.zig");
-const GameBoard = @import("game_board.zig");
 const FlagBitset = @import("flag_bitset.zig");
+const GameBoard = @import("game_board.zig");
 const GameIo = @import("game_io_interface.zig");
 const TerminalGameIo = @import("terminal_game_io.zig");
 
@@ -36,16 +35,13 @@ pub fn main(init: std.process.Init) !void {
     // TODO: Main will segfault immediately if stack size too big, so find a way to measure how much we
     // need to allocate and defer to allocating a page from the OS instead in that case
     // (either huge boards or hundreds of teams cause this)
-
-    // Buffer not used if comptime board being used, hence else [0]u8
-    // TODO: Honestly remove the whole baking into executable memory thing, and instead just get variables at compile time and make at runtime
-    var buff: if (!comptimeInit) [totalSize]u8 else [0]u8 = undefined;
-    var allocImpl = (comptime GameAllocator.getType(comptimeInit)).init(&buff);
+    var buff: [totalSize]u8 = undefined;
+    var allocImpl = std.heap.FixedBufferAllocator.init(&buff);
 
     // var allocImpl = std.heap.DebugAllocator(.{}){};
     // defer _ = allocImpl.deinit();
 
-    var gameBoard = try GameBoard.init(allocImpl.allocator(), comptime if (!comptimeInit) OPTIONS.width else config.width.?, comptime if (!comptimeInit) OPTIONS.height else config.height.?, comptime if (!comptimeInit) OPTIONS.numMines else config.num_mines.?, rngImpl.interface());
+    var gameBoard = try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     var flagBitset = try FlagBitset.init(allocImpl.allocator(), boardSize, numTeams);
 
     defer gameBoard.deinit();

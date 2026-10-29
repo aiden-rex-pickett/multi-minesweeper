@@ -1,4 +1,4 @@
-//! This module represents a minesweeper board that contains an array of cells
+//! This struct represents a minesweeper board that contains an array of cells
 
 const std = @import("std");
 const print = std.debug.print;
@@ -67,7 +67,7 @@ pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32
             .{ .dr = 0, .dc = 1 },   .{ .dr = 1, .dc = -1 }, .{ .dr = 1, .dc = 0 },  .{ .dr = 1, .dc = 1 },
         };
         for (directions) |direction| {
-            if (board.getCell(row + direction.dr, col + direction.dc)) |neighborCell| neighborCell.neighbors += 1;
+            if (board.getCellMutable(row + direction.dr, col + direction.dc)) |neighborCell| neighborCell.neighbors += 1;
         }
     }
 
@@ -79,9 +79,16 @@ pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
 
-/// Gets an optional pionter to the cell at the provided row and column.
+/// Gets an optional pointer to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
-inline fn getCell(self: *const Self, row: i32, col: i32) ?*Cell {
+inline fn getCellMutable(self: *const Self, row: i32, col: i32) ?*Cell {
+    if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
+    return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
+}
+
+/// Gets an optional constant pointer to the cell at the provided row and column.
+/// If the row and column are not valid the optional is empty, else the optional is populated
+pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*const Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
 }
@@ -103,7 +110,7 @@ const RevealResult = enum {
 /// Reveals a cell, returning an enum representing what happened
 pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i32, col: i32) error{OutOfMemory}!RevealResult {
     // If either getting the cell or getting the bitset flagged status fails, then the row and column are invalid
-    const cell = self.getCell(row, col) orelse return .Invalid;
+    const cell = self.getCellMutable(row, col) orelse return .Invalid;
     const flagged = flagBitset.flagged(getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width), team) catch return .Invalid;
 
     // If clicking a flagged or already revealed cell, it is a nop
@@ -182,7 +189,7 @@ pub fn validateNeighborCounts(self: *const Self) bool {
             var dx: i32 = -1;
             while (dx <= 1) : (dx += 1) {
                 if (dy == 0 and dx == 0) continue;
-                actual += if (self.getCell(row + dy, col + dx)) |neighborCell| @intFromBool(neighborCell.mine) else 0;
+                actual += if (self.getCellMutable(row + dy, col + dx)) |neighborCell| @intFromBool(neighborCell.mine) else 0;
             }
         }
 
@@ -278,14 +285,14 @@ test "get-mines-out-of-bounds" {
             while (r < 0) : (r += 1) {
                 var c: i32 = -100;
                 while (c < 0) : (c += 1) {
-                    try testing.expect(board.getCell(r, c) == null);
+                    try testing.expect(board.getCellMutable(r, c) == null);
                 }
             }
             r = @intCast(width);
             while (r < 200) : (r += 1) {
                 var c: i32 = @intCast(height);
                 while (c < 200) : (c += 1) {
-                    try testing.expect(board.getCell(r, c) == null);
+                    try testing.expect(board.getCellMutable(r, c) == null);
                 }
             }
             try testing.expect(board.validateNeighborCounts());
@@ -328,7 +335,7 @@ test "get_cell_mutable_pointer" {
     var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
     defer game_board.deinit();
 
-    const cell = game_board.getCell(0, 0) orelse unreachable;
+    const cell = game_board.getCellMutable(0, 0) orelse unreachable;
     const before = game_board.cells[0];
     cell.team = 10;
     try testing.expect(10 == game_board.cells[0].team);

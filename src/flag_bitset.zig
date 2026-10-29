@@ -1,3 +1,5 @@
+//! This struct represents a bitset of flagged states for multiple teams
+
 const std = @import("std");
 const print = std.debug.print;
 const testing = std.testing;
