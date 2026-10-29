@@ -57,7 +57,7 @@ inline fn getBitsetIndex(self: *const Self, index: usize, team: usize) error{ In
 }
 
 /// Unchecked version of flagged, don't use until production or you are sure it will speed things up
-pub inline fn flaggedUnchecked(self: *Self, index: usize, team: usize) void {
+pub inline fn flaggedUnchecked(self: *const Self, index: usize, team: usize) bool {
     return self.bitsets[((team - 1) * self.teamSetWidth) + index / 64] & (@as(u64, 1) << @intCast(index & 63)) != 0;
 }
 
