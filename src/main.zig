@@ -57,7 +57,7 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoardDebug(gameBoard);
+        try GameIoImpl.renderBoardDebug(gameBoard, flagBitset);
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {
             const bitsetIndex = GameBoard.getCellIndex(@as(u32, @intCast(userAction.row)), @as(u32, @intCast(userAction.col)), gameBoard.width);

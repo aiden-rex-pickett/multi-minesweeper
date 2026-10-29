@@ -1,6 +1,7 @@
+/// This file holds struct definitions for polymorphic IO purposes, containing the required methods
 const std = @import("std");
 
-/// This file holds struct definitions for polymorphic IO purposes, containing the required methods
+const FlagBitset = @import("flag_bitset.zig");
 const GameBoard = @import("game_board.zig");
 
 /// info struct about a player action taken
@@ -14,9 +15,8 @@ pub const Action = struct {
 /// The required methods to be a gameIo interface
 const reqMethods = .{
     // TODO: Change these to not be anyerror but some more useful error union
-    // TODO: May need to change to also take in bitset now
-    .{ .name = "renderBoard", .signature = fn (board: *const GameBoard) anyerror!void },
-    .{ .name = "renderBoardDebug", .signature = fn (board: *const GameBoard) anyerror!void },
+    .{ .name = "renderBoard", .signature = fn (board: *const GameBoard, flagBitset: *const FlagBitset) anyerror!void },
+    .{ .name = "renderBoardDebug", .signature = fn (board: *const GameBoard, flagBitset: *const FlagBitset) anyerror!void },
     .{ .name = "getUserInput", .signature = fn (io: std.Io) anyerror!Action },
 };
 

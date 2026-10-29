@@ -1,20 +1,21 @@
-/// Terminal rendering and input interface for board game
+/// Terminal rendering and input interface
+const std = @import("std");
+const print = std.debug.print;
+
+const FlagBitset = @import("flag_bitset.zig");
+const GameBoard = @import("game_board.zig");
+const GameIo = @import("game_io_interface.zig");
+
 /// TODO: Instead of using std.debug.print move to holding a file descriptor and printing/reading from
 /// that instead, should make it easier to adapt to a networked version send to the network
 const Self = @This();
 
-const GameBoard = @import("game_board.zig");
-const GameIo = @import("game_io_interface.zig");
-
-const std = @import("std");
-const print = std.debug.print;
-
-pub fn renderBoard(board: *const GameBoard) anyerror!void {
-    printBoard(board, comptime printCell);
+pub fn renderBoard(board: *const GameBoard, flagBitset: *const FlagBitset) anyerror!void {
+    printBoard(board, flagBitset, comptime printCell);
 }
 
-pub fn renderBoardDebug(board: *const GameBoard) anyerror!void {
-    printBoard(board, comptime printCellDebug);
+pub fn renderBoardDebug(board: *const GameBoard, flagBitset: *const FlagBitset) anyerror!void {
+    printBoard(board, flagBitset, comptime printCellDebug);
 }
 
 /// Loops until user provides valid input to terminal
@@ -36,7 +37,7 @@ pub fn getUserInput(io: std.Io) anyerror!GameIo.Action {
 }
 
 /// Prints out board using whatever cell print function is given
-fn printBoard(board: *const GameBoard, cellPrint: fn (cell: GameBoard.Cell) void) void {
+fn printBoard(board: *const GameBoard, flagBitset: *const FlagBitset, cellPrint: fn (cell: GameBoard.Cell, flagged: bool) void) void {
     print("   ", .{});
     for (0..board.width) |i| {
         print(" {d:^3}", .{i});
@@ -51,7 +52,7 @@ fn printBoard(board: *const GameBoard, cellPrint: fn (cell: GameBoard.Cell) void
         print("{d:^3}", .{row});
         for (0..board.width) |col| {
             const cell = board.getCell(@intCast(row), @intCast(col)).?;
-            cellPrint(cell.*);
+            cellPrint(cell.*, flagBitset.flaggedUnchecked(GameBoard.getCellIndex(@intCast(row), @intCast(col), board.width), 1));
         }
         print("|\n   ", .{});
         for (0..board.width) |_| {
@@ -62,22 +63,22 @@ fn printBoard(board: *const GameBoard, cellPrint: fn (cell: GameBoard.Cell) void
 }
 
 /// Prints a single cell
-fn printCell(cell: GameBoard.Cell) void {
+fn printCell(cell: GameBoard.Cell, flagged: bool) void {
     if (!cell.revealed) {
-        print("| █ ", .{});
+        if (flagged) print("| ⚑ ", .{}) else print("| █ ", .{});
+    } else if (cell.mine) {
+        print("| 💥 ", .{});
     } else {
         print("| {} ", .{cell.neighbors});
     }
 }
 
 /// Prints a single cell for debug purposes
-fn printCellDebug(cell: GameBoard.Cell) void {
-    if (cell.mine) {
-        print("| ● ", .{});
-    } else {
-        print("| {}", .{cell.neighbors});
-        if (cell.revealed) print("r", .{}) else print(" ", .{});
-    }
+fn printCellDebug(cell: GameBoard.Cell, flagged: bool) void {
+    print("|", .{});
+    if (flagged) print("f", .{}) else print(" ", .{});
+    if (cell.mine) print("●", .{}) else print("{}", .{cell.neighbors});
+    if (cell.revealed) print("r", .{}) else print(" ", .{});
 }
 
 /// Parses an action input string, returning badFormat error if not parsable
