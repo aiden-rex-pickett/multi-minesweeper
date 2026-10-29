@@ -19,7 +19,7 @@ pub fn init(allocator: std.mem.Allocator, boardSize: u32, teamCount: usize) erro
         return error.InvalidTeamNumber;
 
     // Width of the bitset for each team, rounded up to nearest multiple of 64
-    const teamSetWidth: u64 = boardSize + if (boardSize & 63 != 0) @as(u64, 1) else @as(u64, 0);
+    const teamSetWidth: u64 = boardSize / 64 + if (boardSize & 63 != 0) @as(u64, 1) else @as(u64, 0);
     const bitsets = try allocator.alloc(u64, teamSetWidth * teamCount);
     @memset(bitsets, 0);
 
@@ -218,7 +218,7 @@ test "all_flags_set_on_one_team_none_on_other" {
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
-    var bitset = try Self.init(interface, 1_000, 1000);
+    var bitset = try Self.init(interface, 10_000, 1000);
     defer bitset.deinit();
 
     for (0..10_000) |i| {
