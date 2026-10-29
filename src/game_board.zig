@@ -359,7 +359,10 @@ test "mine_click_looses" {
     var game_board: Self = try .init(interface, 1, 1, 1, prng.random());
     defer game_board.deinit();
 
-    try testing.expect(try game_board.revealCell(0, 0) == .Exploded);
+    var bitset: FlagBitset = try FlagBitset.init(interface, 1, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try game_board.revealCell(&bitset, 1, 0, 0) == .Exploded);
     try testing.expect(game_board.cells[0].mine and game_board.cells[0].revealed);
 }
 
@@ -370,14 +373,106 @@ test "flood_fill_fills" {
 
     var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
 
+    var bitset: FlagBitset = try FlagBitset.init(interface, 100, 1);
+    defer bitset.deinit();
+
     for (0..10) |row| {
         for (0..10) |col| {
             var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
             defer game_board.deinit();
-            try testing.expect(try game_board.revealCell(@as(i32, @intCast(row)), @as(i32, @intCast(col))) == .Win);
+            try testing.expect(try game_board.revealCell(&bitset, 1, @as(i32, @intCast(row)), @as(i32, @intCast(col))) == .Win);
             for (game_board.cells) |cell| {
                 try testing.expect(cell.revealed);
             }
         }
     }
+}
+
+test "flood_fill_doesnt_cross_flags" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+
+    var bitset: FlagBitset = try FlagBitset.init(interface, 100, 1);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(55, 1);
+
+    try testing.expect(try game_board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(try bitset.flagged(55, 1));
+
+    for (0..100) |i| {
+        if (i == 55) continue;
+        try testing.expect(!try bitset.flagged(i, 1));
+    }
+}
+
+test "flood_fill_over_other_flag_crosses" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+
+    var bitset: FlagBitset = try FlagBitset.init(interface, 100, 2);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(55, 1);
+
+    try testing.expect(try game_board.revealCell(&bitset, 2, 0, 0) == .Win);
+    try testing.expect(try bitset.flagged(55, 1));
+
+    for (0..100) |i| {
+        try testing.expect(!try bitset.flagged(i, 2));
+        if (i == 55) continue;
+        try testing.expect(!try bitset.flagged(i, 1));
+    }
+}
+
+test "click_on_flag_nop" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 100, prng.random());
+    defer game_board.deinit();
+
+    var bitset: FlagBitset = try FlagBitset.init(interface, 100, 1);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(55, 1);
+
+    try testing.expect(try game_board.revealCell(&bitset, 1, 5, 5) == .Nop);
+}
+
+test "flood_fill_fills after flag toggle cycle" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+
+    var bitset: FlagBitset = try FlagBitset.init(interface, 100, 1);
+    defer bitset.deinit();
+
+    for (0..100) |i| {
+        if (i % 2 == 0) try bitset.toggleFlag(0, 1);
+    }
+    for (0..100) |i| {
+        if (i % 2 == 0) try bitset.toggleFlag(0, 1);
+    }
+    try testing.expect(try game_board.revealCell(&bitset, 1, 0, 0) == .Win);
 }
