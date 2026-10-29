@@ -14,7 +14,28 @@ pub const Action = struct {
 
 /// The required methods to be a gameIo interface
 const reqMethods = .{
-    // TODO: Change these to not be anyerror but some more useful error union
+    // TODO: Change these to not be anyerror but some more useful error union once we know common errors
+    // AIs idea: pub const UniversalIoError = error{
+    //     /// The communication channel closed, the GUI window was shut,
+    //     /// or the carrier pigeon never returned.
+    //     Disconnected,
+    //
+    //     /// Waited too long for input or an acknowledgment from the peer/user.
+    //     Timeout,
+    //
+    //     /// The incoming payload (a malformed network packet, a corrupted GUI event,
+    //     /// or garbled smoke signals) couldn't be parsed or understood.
+    //     InvalidData,
+    //
+    //     /// The output buffer is full, or the message is too large to transmit
+    //     /// through the current medium.
+    //     CapacityExceeded,
+    //
+    //     /// A catch-all for an unexpected low-level failure of the underlying
+    //     /// medium (e.g., a broken pipe, a GPU crash, or a sudden gust of wind).
+    //     IoFailure,
+    // };
+
     .{ .name = "renderBoard", .signature = fn (board: *const GameBoard, flagBitset: *const FlagBitset) anyerror!void },
     .{ .name = "renderBoardDebug", .signature = fn (board: *const GameBoard, flagBitset: *const FlagBitset) anyerror!void },
     .{ .name = "getUserInput", .signature = fn (io: std.Io) anyerror!Action },
