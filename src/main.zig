@@ -14,7 +14,7 @@ const INTERMEDIATE_OPTS = .{ .width = 16, .height = 16, .numMines = 40 };
 const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
 const CUSTOM_OPTS = .{ .width = 40, .height = 20, .numMines = 99 };
 
-const OPTIONS = CUSTOM_OPTS;
+const OPTIONS = BEGINNER_OPTS;
 
 pub fn main(init: std.process.Init) !void {
     const rngImpl: std.Random.IoSource = .{ .io = init.io };
@@ -43,18 +43,10 @@ fn runGame(gameBoard: *GameBoard, GameIoImpl: anytype, io: std.Io) anyerror!void
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoardDebug(gameBoard);
+        try GameIoImpl.renderBoard(gameBoard);
         const userAction = try GameIoImpl.getUserInput(io);
-        if (userAction.flag) switch (gameBoard.toggleFlag(userAction.row, userAction.col)) {
-            .Invalid => {
-                print("FLAG RESULT INVALID\n", .{});
-            },
-            .Nop => {
-                print("FLAG REAULT NOP\n", .{});
-            },
-            .Safe => {
-                print("FLAG RESULT SAFE\n", .{});
-            },
+        if (userAction.flag) {
+            // TODO: Fill after flag bitset migration
         } else if (gameBoard.revealCell(userAction.row, userAction.col)) |result| {
             switch (result) {
                 .Exploded => {

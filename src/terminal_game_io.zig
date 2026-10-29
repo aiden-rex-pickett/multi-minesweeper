@@ -63,9 +63,7 @@ fn printBoard(board: *const GameBoard, cellPrint: fn (cell: GameBoard.Cell) void
 
 /// Prints a single cell
 fn printCell(cell: GameBoard.Cell) void {
-    if (cell.flagged) {
-        print("| ⚑ ", .{});
-    } else if (!cell.revealed) {
+    if (!cell.revealed) {
         print("| █ ", .{});
     } else {
         print("| {} ", .{cell.neighbors});
@@ -75,11 +73,9 @@ fn printCell(cell: GameBoard.Cell) void {
 /// Prints a single cell for debug purposes
 fn printCellDebug(cell: GameBoard.Cell) void {
     if (cell.mine) {
-        if (cell.flagged) print("|f● ", .{}) else print("| ● ", .{});
+        print("| ● ", .{});
     } else {
-        print("|", .{});
-        if (cell.flagged) print("f", .{}) else print(" ", .{});
-        print("{}", .{cell.neighbors});
+        print("| {}", .{cell.neighbors});
         if (cell.revealed) print("r", .{}) else print(" ", .{});
     }
 }

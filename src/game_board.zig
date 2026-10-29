@@ -19,18 +19,16 @@ allocator: std.mem.Allocator, // Allocator that allocated the array of cells and
 /// The packed struct that represents a minesweeper cell
 pub const Cell = packed struct(u16) {
     mine: bool,
-    flagged: bool,
     revealed: bool,
     neighbors: u4,
-    team: u8,
-    pad: u1 = 0,
+    team: u10,
 };
 
 /// Initalizes a new Board of the provided width, height, and number of mines using the provided buffer.
 /// The buffer must be at least 4 * width * height bytes.
 /// If the buffer is not large enough, an UndersizedBuffer error is returned
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
-pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, numMines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
+pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
     const totalCells, const overflow = @mulWithOverflow(width, height);
     if (overflow == 1 or width > MAX_DIMENSION or height > MAX_DIMENSION or width == 0 or height == 0)
         return error.InvalidDimensions;
@@ -40,11 +38,11 @@ pub fn init(alloc: std.mem.Allocator, width: u32, height: u32, numMines: u32, ra
     }
 
     var board = Self{
-        .cells = try alloc.alloc(Cell, width * height),
+        .cells = try allocator.alloc(Cell, width * height),
         .width = width,
         .height = height,
         .cellsLeft = totalCells - numMines,
-        .allocator = alloc,
+        .allocator = allocator,
     };
 
     board.fillBoard(numMines, rand);
@@ -68,24 +66,24 @@ inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
     return row * width + col;
 }
 
-/// Type returned by toggleFlag representing the result of the flag
-const FlagResult = enum {
-    Invalid,
-    Nop,
-    Safe,
-};
-
-/// Flags a cell, returning an enum representing what happened
-pub inline fn toggleFlag(self: *Self, row: i32, col: i32) FlagResult {
-    if (self.getCell(row, col)) |cell| {
-        if (!cell.revealed) {
-            cell.flagged = !cell.flagged;
-            return .Safe;
-        }
-        return .Nop;
-    }
-    return .Invalid;
-}
+// /// Type returned by toggleFlag representing the result of the flag
+// const FlagResult = enum {
+//     Invalid,
+//     Nop,
+//     Safe,
+// };
+//
+// /// Flags a cell, returning an enum representing what happened
+// pub inline fn toggleFlag(self: *Self, row: i32, col: i32) FlagResult {
+//     if (self.getCell(row, col)) |cell| {
+//         if (!cell.revealed) {
+//             cell.flagged = !cell.flagged;
+//             return .Safe;
+//         }
+//         return .Nop;
+//     }
+//     return .Invalid;
+// }
 
 /// Type returned by clickCell representing the result of the click
 const RevealResult = enum {
@@ -100,7 +98,8 @@ const RevealResult = enum {
 pub fn revealCell(self: *Self, row: i32, col: i32) error{OutOfMemory}!RevealResult {
     const cell = self.getCell(row, col) orelse return .Invalid;
 
-    if (cell.flagged or cell.revealed) return .Nop;
+    // TODO: Change back to have or flagged work after flag bitset implemented
+    if (cell.revealed) return .Nop;
 
     cell.revealed = true;
     if (cell.mine) return .Exploded;
@@ -153,7 +152,8 @@ inline fn addValidNeighbors(self: *Self, cellIndex: u32, stack: []u32, stackTopN
         const newIndex = @as(u32, @intCast(newRowSigned)) * self.width + @as(u32, @intCast(newColSigned));
         const newCell = &self.cells[newIndex];
 
-        if (!newCell.revealed and !newCell.flagged) {
+        // TODO: Add or flagged with bitset after implemented
+        if (!newCell.revealed) {
             newCell.revealed = true;
             self.cellsLeft -= 1;
             stack[stackTopNext.*] = newIndex;
@@ -196,7 +196,6 @@ pub fn validate_neighbor_counts(self: Self) bool {
 fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
     @memset(self.cells[0..numMines], Cell{
         .mine = true,
-        .flagged = false,
         .revealed = false,
         .neighbors = 0,
         .team = 0,
@@ -214,23 +213,16 @@ fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
 fn setNeighborsAll(self: *Self) void {
     for (self.cells, 0..) |cell, i| {
         if (!cell.mine) continue;
-        const row = i / self.width;
-        const col = i % self.width;
-        self.setNeighbors(@as(i32, @intCast(row)), @as(i32, @intCast(col)));
-    }
-}
+        const row = @as(i32, @intCast(i / self.width));
+        const col = @as(i32, @intCast(i % self.width));
 
-/// Sets the surrounding 8 neighbors of a single cell
-fn setNeighbors(self: *Self, row: i32, col: i32) void {
-    var dy: i32 = -1;
-    while (dy <= 1) : (dy += 1) {
-        const r = row + dy;
-        var dx: i32 = -1;
-        while (dx <= 1) : (dx += 1) {
-            if (dy == 0 and dx == 0) continue;
-            const c = col + dx;
-
-            if (self.getCell(r, c)) |cell| cell.neighbors += 1;
+        const directions = [_]struct { dr: i32, dc: i32 }{
+            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
+            .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
+            .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
+        };
+        for (directions) |direction| {
+            if (self.getCell(row + direction.dr, col + direction.dc)) |neighborCell| neighborCell.neighbors += 1;
         }
     }
 }
