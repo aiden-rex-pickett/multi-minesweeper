@@ -1,6 +1,4 @@
-//! This module represents a minesweeper board
-//! It contains an array of cells, as well as an allocator
-//! for pointing to some scratch space to do bfs for flood fill
+//! This module represents a minesweeper board that contains an array of cells
 
 const std = @import("std");
 const print = std.debug.print;
@@ -8,7 +6,8 @@ const testing = std.testing;
 
 const Self = @This();
 
-const MAX_DIMENSION: u32 = 10_000;
+pub const MAX_DIMENSION: u32 = 10_000;
+pub const MAX_TEAMS: u10 = ~@as(u10, 0);
 
 cells: []Cell, // Array of cells representing the board
 width: u32, // Board width
@@ -30,7 +29,7 @@ pub const Cell = packed struct(u16) {
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
 pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
     const totalCells, const overflow = @mulWithOverflow(width, height);
-    if (overflow == 1 or width > MAX_DIMENSION or height > MAX_DIMENSION or width == 0 or height == 0)
+    if (overflow == 1 or totalCells > MAX_DIMENSION * MAX_DIMENSION or totalCells == 0)
         return error.InvalidDimensions;
 
     if (numMines > width * height) {
@@ -50,13 +49,13 @@ pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32
     return board;
 }
 
-pub fn deinit(self: Self) void {
+pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
 
 /// Gets an optional pionter to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
-pub inline fn getCell(self: Self, row: i32, col: i32) ?*Cell {
+pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
 }
@@ -65,25 +64,6 @@ pub inline fn getCell(self: Self, row: i32, col: i32) ?*Cell {
 inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
     return row * width + col;
 }
-
-// /// Type returned by toggleFlag representing the result of the flag
-// const FlagResult = enum {
-//     Invalid,
-//     Nop,
-//     Safe,
-// };
-//
-// /// Flags a cell, returning an enum representing what happened
-// pub inline fn toggleFlag(self: *Self, row: i32, col: i32) FlagResult {
-//     if (self.getCell(row, col)) |cell| {
-//         if (!cell.revealed) {
-//             cell.flagged = !cell.flagged;
-//             return .Safe;
-//         }
-//         return .Nop;
-//     }
-//     return .Invalid;
-// }
 
 /// Type returned by clickCell representing the result of the click
 const RevealResult = enum {
@@ -166,7 +146,7 @@ inline fn addValidNeighbors(self: *Self, cellIndex: u32, stack: []u32, stackTopN
 /// on the number of mine cells surrounding it. For testing purposes and internal validation
 ///
 /// Note that this is only valid in so far as the mine bit is being set correctly
-pub fn validate_neighbor_counts(self: Self) bool {
+pub fn validate_neighbor_counts(self: *const Self) bool {
     for (self.cells, 0..) |cell, i| {
         const row: i32 = @intCast(i / self.width);
         const col: i32 = @intCast(i % self.width);
@@ -296,76 +276,6 @@ test "mine-setup-validation" {
     }
 }
 
-test "flag-set-basic" {
-    var alloc = gpa{};
-    defer _ = alloc.deinit();
-    const interface = alloc.allocator();
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    var board = try Self.init(interface, 30, 30, 99, prng.random());
-    defer board.deinit();
-    for (0..30) |row| {
-        for (0..30) |col| {
-            const r = @as(i32, @intCast(row));
-            const c = @as(i32, @intCast(col));
-            const before = board.getCell(r, c).?.*;
-            _ = board.toggleFlag(r, c);
-            const after = board.getCell(r, c).?.*;
-            const fields = std.meta.fields(Cell);
-
-            inline for (fields) |field| {
-                const beforeVal = @field(before, field.name);
-                const afterVal = @field(after, field.name);
-                if (comptime std.mem.eql(u8, field.name, "flagged")) {
-                    try testing.expect(beforeVal == !afterVal);
-                } else {
-                    try testing.expect(beforeVal == afterVal);
-                }
-            }
-            try testing.expect(board.validate_neighbor_counts());
-        }
-    }
-}
-
-test "flag-set-aftereffect" {
-    var alloc = gpa{};
-    defer _ = alloc.deinit();
-    const interface = alloc.allocator();
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-    var board = try Self.init(interface, 30, 30, 99, prng.random());
-    defer board.deinit();
-
-    const Pair = struct {
-        row: i32,
-        col: i32,
-    };
-
-    var flagSet = std.AutoHashMap(Pair, void).init(interface);
-    defer flagSet.deinit();
-    for (0..30) |row| {
-        for (0..30) |col| {
-            if (prng.random().intRangeAtMost(i32, 0, 10) < 7) {
-                const r = @as(i32, @intCast(row));
-                const c = @as(i32, @intCast(col));
-                try flagSet.put(.{ .row = @as(i32, @intCast(row)), .col = @as(i32, @intCast(col)) }, {});
-                _ = board.toggleFlag(r, c);
-            }
-        }
-    }
-
-    for (0..30) |row| {
-        for (0..30) |col| {
-            const cell = board.getCell(@intCast(row), @intCast(col)).?;
-            if (flagSet.contains(Pair{ .row = @as(i32, @intCast(row)), .col = @as(i32, @intCast(col)) })) {
-                try testing.expect(cell.flagged);
-            } else {
-                try testing.expect(!cell.flagged);
-            }
-        }
-    }
-}
-
 test "get-mines-out-of-bounds" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
@@ -419,29 +329,6 @@ test "invalid_dimension_high" {
     }
 }
 
-test "toggle_flag_toggle" {
-    var alloc = gpa{};
-    defer _ = alloc.deinit();
-    const interface = alloc.allocator();
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-
-    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
-    defer game_board.deinit();
-
-    for (0..10) |row| {
-        for (0..10) |col| {
-            const r = @as(i32, @intCast(row));
-            const c = @as(i32, @intCast(col));
-            const before = game_board.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), 10)];
-            _ = game_board.toggleFlag(r, c);
-            _ = game_board.toggleFlag(r, c);
-            try testing.expect(@as(u16, @bitCast(before)) == @as(u16, @bitCast(game_board.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), 10)])));
-            try testing.expect(game_board.validate_neighbor_counts());
-        }
-    }
-}
-
 test "get_cell_mutable_pointer" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
@@ -456,11 +343,9 @@ test "get_cell_mutable_pointer" {
     const before = game_board.cells[0];
     cell.team = 10;
     try testing.expect(10 == game_board.cells[0].team);
-    try testing.expect(before.flagged == game_board.cells[0].flagged);
     try testing.expect(before.mine == game_board.cells[0].mine);
     try testing.expect(before.revealed == game_board.cells[0].revealed);
     try testing.expect(before.neighbors == game_board.cells[0].neighbors);
-    try testing.expect(before.pad == game_board.cells[0].pad);
 }
 
 test "mine_click_looses" {
@@ -494,52 +379,4 @@ test "flood_fill_fills" {
             }
         }
     }
-}
-
-test "flag_revealed_nop" {
-    var alloc = gpa{};
-    defer _ = alloc.deinit();
-    const interface = alloc.allocator();
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-
-    var game_board: Self = try Self.init(interface, 10, 10, 9, prng.random());
-    defer game_board.deinit();
-
-    for (0..game_board.cells.len) |i| {
-        const cell = &game_board.cells[i];
-        if (!cell.mine) {
-            cell.flagged = true;
-            break;
-        }
-    }
-
-    var r: i32 = 0;
-    for (0..10) |i| {
-        if (game_board.getCell(@as(i32, @intCast(i)), @as(i32, @intCast(i)))) |validCell| {
-            if (!validCell.mine and !validCell.flagged) {
-                r = @as(i32, @intCast(i));
-                break;
-            }
-        }
-    }
-
-    try testing.expect(try game_board.revealCell(r, r) == .Safe);
-    try testing.expect(game_board.toggleFlag(r, r) == .Nop);
-}
-
-test "flood_fill_doesnt_hit_flags" {
-    var alloc = gpa{};
-    defer _ = alloc.deinit();
-    const interface = alloc.allocator();
-
-    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
-
-    var game_board: Self = try Self.init(interface, 10, 10, 0, prng.random());
-    defer game_board.deinit();
-    const before = if (game_board.getCell(4, 4)) |cell| cell else unreachable;
-    try testing.expect(game_board.toggleFlag(4, 4) == .Safe);
-    try testing.expect(try game_board.revealCell(0, 0) != .Win);
-    try testing.expect(before == if (game_board.getCell(4, 4)) |cell| cell else unreachable);
-    try testing.expect(game_board.validate_neighbor_counts());
 }

@@ -43,7 +43,7 @@ fn runGame(gameBoard: *GameBoard, GameIoImpl: anytype, io: std.Io) anyerror!void
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoard(gameBoard);
+        try GameIoImpl.renderBoardDebug(gameBoard);
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {
             // TODO: Fill after flag bitset migration
