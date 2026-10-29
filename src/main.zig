@@ -15,13 +15,13 @@ const INTERMEDIATE_OPTS = .{ .width = 16, .height = 16, .numMines = 40 };
 const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
 const CUSTOM_OPTS = .{ .width = 3, .height = 3, .numMines = 0 };
 
-const OPTIONS = BEGINNER_OPTS;
+const comptimeInit = config.width != null and config.height != null and config.numMines != null;
+
+const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? } else BEGINNER_OPTS;
 
 pub fn main(init: std.process.Init) !void {
-    const rngImpl: std.Random.IoSource = .{ .io = init.io };
-
     comptime checkComptimeArgs();
-    const comptimeInit = config.width != null and config.height != null and config.num_mines != null;
+    const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
     const numTeams = 1;
 
@@ -105,7 +105,7 @@ inline fn checkComptimeArgs() void {
     var check: comptime_int = 0;
     if (config.width != null) check += 1;
     if (config.height != null) check += 1;
-    if (config.num_mines != null) check += 1;
+    if (config.numMines != null) check += 1;
 
     if (check == 0) return;
 
@@ -118,6 +118,6 @@ inline fn checkComptimeArgs() void {
     if (config.height.? <= 0)
         @compileError("Comptime board initalization attempted with 0 height board, make sure -Dheight is greater than 0");
 
-    if (config.num_mines.? > config.width.? * config.height.?)
+    if (config.numMines.? > config.width.? * config.height.?)
         @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
 }

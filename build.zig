@@ -6,13 +6,13 @@ pub fn build(b: *std.Build) void {
 
     const width = b.option(u32, "width", "Board Width, only has an effect if using -Dfixed=true");
     const height = b.option(u32, "height", "Board Height, only has an effect if using -Dfixed=true");
-    const num_mines = b.option(u32, "num_mines", "Number of mines, only has an effect if using -Dfixed=true");
+    const numMines = b.option(u32, "numMines", "Number of mines, only has an effect if using -Dfixed=true");
 
     const options = b.addOptions();
 
     options.addOption(?u32, "width", width);
     options.addOption(?u32, "height", height);
-    options.addOption(?u32, "num_mines", num_mines);
+    options.addOption(?u32, "numMines", numMines);
 
     const source_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
