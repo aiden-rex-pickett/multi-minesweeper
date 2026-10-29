@@ -57,7 +57,7 @@ pub fn deinit(self: *const Self) void {
 
 /// Gets an optional pionter to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
-pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*Cell {
+inline fn getCell(self: *const Self, row: i32, col: i32) ?*Cell {
     if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
     return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
 }
