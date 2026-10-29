@@ -4,6 +4,8 @@ const std = @import("std");
 const print = std.debug.print;
 const testing = std.testing;
 
+const FlagBitset = @import("flag_bitset.zig");
+
 const Self = @This();
 
 pub const MAX_DIMENSION: u32 = 10_000;
@@ -61,7 +63,7 @@ pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*Cell {
 }
 
 /// Basically a macro for doing 2d indexing in 1d array.
-inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
+pub inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
     return row * width + col;
 }
 
@@ -75,20 +77,19 @@ const RevealResult = enum {
 };
 
 /// Reveals a cell, returning an enum representing what happened
-pub fn revealCell(self: *Self, row: i32, col: i32) error{OutOfMemory}!RevealResult {
+pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i32, col: i32) error{OutOfMemory}!RevealResult {
     const cell = self.getCell(row, col) orelse return .Invalid;
 
-    // TODO: Change back to have or flagged work after flag bitset implemented
-    if (cell.revealed) return .Nop;
+    const flagged = flagBitset.flagged(getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width), team) catch return .Invalid;
+    if (cell.revealed or flagged) return .Nop;
 
     cell.revealed = true;
     if (cell.mine) return .Exploded;
 
     self.cellsLeft -= 1;
 
-    if (cell.neighbors == 0) {
-        try self.floodFill(@as(u32, @intCast(row)), @as(u32, @intCast(col)));
-    }
+    if (cell.neighbors == 0)
+        try self.floodFill(flagBitset, team, @as(u32, @intCast(row)), @as(u32, @intCast(col)));
 
     if (self.cellsLeft == 0) return .Win;
 
@@ -96,7 +97,7 @@ pub fn revealCell(self: *Self, row: i32, col: i32) error{OutOfMemory}!RevealResu
 }
 
 /// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
-fn floodFill(self: *Self, row: u32, col: u32) error{OutOfMemory}!void {
+fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, col: u32) error{OutOfMemory}!void {
     var stack = try self.allocator.alloc(u32, self.width * self.height);
     defer self.allocator.free(stack);
     stack[0] = getCellIndex(row, col, self.width);
@@ -107,12 +108,12 @@ fn floodFill(self: *Self, row: u32, col: u32) error{OutOfMemory}!void {
         const cellIndex = stack[stackTopNext - 1];
         stackTopNext -= 1;
 
-        if (self.cells[cellIndex].neighbors == 0) self.addValidNeighbors(cellIndex, stack, &stackTopNext);
+        if (self.cells[cellIndex].neighbors == 0) self.addValidNeighbors(flagBitset, team, cellIndex, stack, &stackTopNext);
     }
 }
 
 /// Adds all valid neighbors of a cell to the given stack, marking as revealed on push
-inline fn addValidNeighbors(self: *Self, cellIndex: u32, stack: []u32, stackTopNext: *usize) void {
+inline fn addValidNeighbors(self: *Self, flagBitset: *const FlagBitset, team: u32, cellIndex: u32, stack: []u32, stackTopNext: *usize) void {
     const width = self.width;
 
     const row = cellIndex / width;
@@ -129,11 +130,11 @@ inline fn addValidNeighbors(self: *Self, cellIndex: u32, stack: []u32, stackTopN
 
         if (newRowSigned < 0 or newRowSigned >= self.height or newColSigned < 0 or newColSigned >= self.width) continue;
 
-        const newIndex = @as(u32, @intCast(newRowSigned)) * self.width + @as(u32, @intCast(newColSigned));
+        const newIndex = getCellIndex(@as(u32, @intCast(newRowSigned)), @as(u32, @intCast(newColSigned)), self.width);
         const newCell = &self.cells[newIndex];
 
-        // TODO: Add or flagged with bitset after implemented
-        if (!newCell.revealed) {
+        const flagged = flagBitset.flaggedUnchecked(newIndex, team);
+        if (!newCell.revealed and !flagged) {
             newCell.revealed = true;
             self.cellsLeft -= 1;
             stack[stackTopNext.*] = newIndex;
