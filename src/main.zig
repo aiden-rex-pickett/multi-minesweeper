@@ -57,7 +57,8 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoardDebug(gameBoard, flagBitset);
+        try GameIoImpl.renderBoard(gameBoard, flagBitset);
+
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {
             const bitsetIndex = GameBoard.getCellIndex(@as(u32, @intCast(userAction.row)), @as(u32, @intCast(userAction.col)), gameBoard.width);
@@ -89,9 +90,11 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
                     print("Click a valid cell please\n", .{});
                 },
             }
-        } else |err| {
-            print("MEMORY RAN OUT WHILE REVEALING CELLS, LIKELY DURING FLOOD FILL!!! {}", .{err});
-            unreachable;
+        } else |err| switch (err) {
+            error.OutOfMemory => {
+                print("MEMORY RAN OUT WHILE REVEALING CELLS, LIKELY DURING FLOOD FILL!!! {}", .{err});
+                unreachable;
+            },
         }
         print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
     }

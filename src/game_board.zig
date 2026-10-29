@@ -476,3 +476,20 @@ test "flood_fill_fills after flag toggle cycle" {
     }
     try testing.expect(try game_board.revealCell(&bitset, 1, 0, 0) == .Win);
 }
+
+test "other_player_click_other_team_flag_works" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    var prng = std.Random.DefaultPrng.init(std.testing.random_seed);
+
+    var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
+    defer game_board.deinit();
+
+    var bitset: FlagBitset = try FlagBitset.init(interface, 100, 2);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(0, 1);
+    try testing.expect(try game_board.revealCell(&bitset, 2, 0, 0) == .Win);
+}
