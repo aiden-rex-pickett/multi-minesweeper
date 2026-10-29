@@ -25,18 +25,14 @@ pub const Cell = packed struct(u16) {
     team: u10,
 };
 
-/// Initalizes a new Board of the provided width, height, and number of mines using the provided buffer.
-/// The buffer must be at least 4 * width * height bytes.
-/// If the buffer is not large enough, an UndersizedBuffer error is returned
+/// Initalizes a new Board of the provided width, height, and number of mines using the provided allocator.
 /// If you try to initalize a board with more mines than cells, a TooManyMines error is returned
+/// If you try to initalize a board that is of 0 width or has more than MAX_DIMENSION * MAX_DIMENSION total cells, a InvalidDimensions error is returned
 pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
     const totalCells, const overflow = @mulWithOverflow(width, height);
-    if (overflow == 1 or totalCells > MAX_DIMENSION * MAX_DIMENSION or totalCells == 0)
-        return error.InvalidDimensions;
+    if (overflow == 1 or totalCells > MAX_DIMENSION * MAX_DIMENSION or totalCells == 0) return error.InvalidDimensions;
 
-    if (numMines > width * height) {
-        return error.TooManyMines;
-    }
+    if (numMines > width * height) return error.TooManyMines;
 
     var board = Self{
         .cells = try allocator.alloc(Cell, width * height),
@@ -46,11 +42,39 @@ pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32
         .allocator = allocator,
     };
 
-    board.fillBoard(numMines, rand);
-    board.setNeighborsAll();
+    // Does a fisher-yates shuffle to place the mines
+    @memset(board.cells[0..numMines], Cell{
+        .mine = true,
+        .revealed = false,
+        .neighbors = 0,
+        .team = 0,
+    });
+    @memset(board.cells[numMines..board.cells.len], @bitCast(@as(u16, 0)));
+
+    for (0..numMines) |i| {
+        const j = rand.intRangeAtMost(usize, i, board.cells.len - 1);
+        std.mem.swap(Cell, &board.cells[i], &board.cells[j]);
+    }
+
+    // Sets the neighbors field for each of the Cells in the board
+    for (board.cells, 0..) |cell, i| {
+        if (!cell.mine) continue;
+        const row = @as(i32, @intCast(i / width));
+        const col = @as(i32, @intCast(i % width));
+
+        const directions = [_]struct { dr: i32, dc: i32 }{
+            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 }, .{ .dr = 0, .dc = -1 },
+            .{ .dr = 0, .dc = 1 },   .{ .dr = 1, .dc = -1 }, .{ .dr = 1, .dc = 0 },  .{ .dr = 1, .dc = 1 },
+        };
+        for (directions) |direction| {
+            if (board.getCell(row + direction.dr, col + direction.dc)) |neighborCell| neighborCell.neighbors += 1;
+        }
+    }
+
     return board;
 }
 
+/// Frees the cells array using the allocator provided during intialization
 pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
@@ -78,9 +102,11 @@ const RevealResult = enum {
 
 /// Reveals a cell, returning an enum representing what happened
 pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i32, col: i32) error{OutOfMemory}!RevealResult {
+    // If either getting the cell or getting the bitset flagged status fails, then the row and column are invalid
     const cell = self.getCell(row, col) orelse return .Invalid;
-
     const flagged = flagBitset.flagged(getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width), team) catch return .Invalid;
+
+    // If clicking a flagged or already revealed cell, it is a nop
     if (cell.revealed or flagged) return .Nop;
 
     cell.revealed = true;
@@ -105,40 +131,36 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
     var stackTopNext: usize = 1;
 
     while (stackTopNext > 0) {
-        const cellIndex = stack[stackTopNext - 1];
+        const currCellIndex = stack[stackTopNext - 1];
         stackTopNext -= 1;
 
-        if (self.cells[cellIndex].neighbors == 0) self.addValidNeighbors(flagBitset, team, cellIndex, stack, &stackTopNext);
-    }
-}
+        if (self.cells[currCellIndex].neighbors > 0) continue;
+        const width = self.width;
 
-/// Adds all valid neighbors of a cell to the given stack, marking as revealed on push
-inline fn addValidNeighbors(self: *Self, flagBitset: *const FlagBitset, team: u32, cellIndex: u32, stack: []u32, stackTopNext: *usize) void {
-    const width = self.width;
+        const currCellRow = currCellIndex / width;
+        const currCellCol = currCellIndex % width;
 
-    const row = cellIndex / width;
-    const col = cellIndex % width;
+        const directions = [_]struct { dr: i32, dc: i32 }{
+            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
+            .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
+            .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
+        };
+        for (directions) |direction| {
+            const newRowSigned: i32 = @as(i32, @intCast(currCellRow)) + direction.dr;
+            const newColSigned: i32 = @as(i32, @intCast(currCellCol)) + direction.dc;
 
-    const directions = [_]struct { dr: i32, dc: i32 }{
-        .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
-        .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
-        .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
-    };
-    for (directions) |direction| {
-        const newRowSigned: i32 = @as(i32, @intCast(row)) + direction.dr;
-        const newColSigned: i32 = @as(i32, @intCast(col)) + direction.dc;
+            if (newRowSigned < 0 or newRowSigned >= self.height or newColSigned < 0 or newColSigned >= self.width) continue;
 
-        if (newRowSigned < 0 or newRowSigned >= self.height or newColSigned < 0 or newColSigned >= self.width) continue;
+            const newIndex = getCellIndex(@as(u32, @intCast(newRowSigned)), @as(u32, @intCast(newColSigned)), self.width);
+            const newCell = &self.cells[newIndex];
 
-        const newIndex = getCellIndex(@as(u32, @intCast(newRowSigned)), @as(u32, @intCast(newColSigned)), self.width);
-        const newCell = &self.cells[newIndex];
-
-        const flagged = flagBitset.flaggedUnchecked(newIndex, team);
-        if (!newCell.revealed and !flagged) {
-            newCell.revealed = true;
-            self.cellsLeft -= 1;
-            stack[stackTopNext.*] = newIndex;
-            stackTopNext.* += 1;
+            const flagged = flagBitset.flaggedUnchecked(newIndex, team);
+            if (!newCell.revealed and !flagged) {
+                newCell.revealed = true;
+                self.cellsLeft -= 1;
+                stack[stackTopNext] = newIndex;
+                stackTopNext += 1;
+            }
         }
     }
 }
@@ -147,12 +169,12 @@ inline fn addValidNeighbors(self: *Self, flagBitset: *const FlagBitset, team: u3
 /// on the number of mine cells surrounding it. For testing purposes and internal validation
 ///
 /// Note that this is only valid in so far as the mine bit is being set correctly
-pub fn validate_neighbor_counts(self: *const Self) bool {
+pub fn validateNeighborCounts(self: *const Self) bool {
     for (self.cells, 0..) |cell, i| {
         const row: i32 = @intCast(i / self.width);
         const col: i32 = @intCast(i % self.width);
-        const seen = cell.neighbors;
 
+        const seen = cell.neighbors;
         var actual: i32 = 0;
 
         var dy: i32 = -1;
@@ -160,7 +182,7 @@ pub fn validate_neighbor_counts(self: *const Self) bool {
             var dx: i32 = -1;
             while (dx <= 1) : (dx += 1) {
                 if (dy == 0 and dx == 0) continue;
-                actual += if (self.getCell(row + dy, col + dx)) |check_cell| @intFromBool(check_cell.mine) else 0;
+                actual += if (self.getCell(row + dy, col + dx)) |neighborCell| @intFromBool(neighborCell.mine) else 0;
             }
         }
 
@@ -171,41 +193,6 @@ pub fn validate_neighbor_counts(self: *const Self) bool {
     }
 
     return true;
-}
-
-/// Does a fisher-yates shuffle to place the mines
-fn fillBoard(self: *Self, numMines: u32, rand: std.Random) void {
-    @memset(self.cells[0..numMines], Cell{
-        .mine = true,
-        .revealed = false,
-        .neighbors = 0,
-        .team = 0,
-    });
-    @memset(self.cells[numMines..self.cells.len], @bitCast(@as(u16, 0)));
-
-    for (0..numMines) |i| {
-        const j = rand.intRangeAtMost(usize, i, self.cells.len - 1);
-        std.mem.swap(Cell, &self.cells[i], &self.cells[j]);
-    }
-}
-
-/// Sets the neighbors field for each of the Cells in the board, filling out the numbers properly
-/// To be used after fillBoard is called on a fresh board
-fn setNeighborsAll(self: *Self) void {
-    for (self.cells, 0..) |cell, i| {
-        if (!cell.mine) continue;
-        const row = @as(i32, @intCast(i / self.width));
-        const col = @as(i32, @intCast(i % self.width));
-
-        const directions = [_]struct { dr: i32, dc: i32 }{
-            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
-            .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
-            .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
-        };
-        for (directions) |direction| {
-            if (self.getCell(row + direction.dr, col + direction.dc)) |neighborCell| neighborCell.neighbors += 1;
-        }
-    }
 }
 
 // -------------------- TESTS -------------------- //
@@ -253,7 +240,7 @@ test "mine-setup-validation" {
                 defer _ = alloc.deinit();
                 var game_board = try Self.init(alloc.allocator(), board_width, board_height, num_mines, random);
                 defer game_board.deinit();
-                result.* = game_board.validate_neighbor_counts();
+                result.* = game_board.validateNeighborCounts();
             }
         };
 
@@ -301,6 +288,7 @@ test "get-mines-out-of-bounds" {
                     try testing.expect(board.getCell(r, c) == null);
                 }
             }
+            try testing.expect(board.validateNeighborCounts());
         }
     }
 }
@@ -347,6 +335,7 @@ test "get_cell_mutable_pointer" {
     try testing.expect(before.mine == game_board.cells[0].mine);
     try testing.expect(before.revealed == game_board.cells[0].revealed);
     try testing.expect(before.neighbors == game_board.cells[0].neighbors);
+    try testing.expect(game_board.validateNeighborCounts());
 }
 
 test "mine_click_looses" {
@@ -364,6 +353,7 @@ test "mine_click_looses" {
 
     try testing.expect(try game_board.revealCell(&bitset, 1, 0, 0) == .Exploded);
     try testing.expect(game_board.cells[0].mine and game_board.cells[0].revealed);
+    try testing.expect(game_board.validateNeighborCounts());
 }
 
 test "flood_fill_fills" {
@@ -380,10 +370,12 @@ test "flood_fill_fills" {
         for (0..10) |col| {
             var game_board: Self = try .init(interface, 10, 10, 0, prng.random());
             defer game_board.deinit();
+            try testing.expect(game_board.validateNeighborCounts());
             try testing.expect(try game_board.revealCell(&bitset, 1, @as(i32, @intCast(row)), @as(i32, @intCast(col))) == .Win);
             for (game_board.cells) |cell| {
                 try testing.expect(cell.revealed);
             }
+            try testing.expect(game_board.validateNeighborCounts());
         }
     }
 }
@@ -401,6 +393,7 @@ test "flood_fill_doesnt_cross_flags" {
     var bitset: FlagBitset = try FlagBitset.init(interface, 100, 1);
     defer bitset.deinit();
 
+    try testing.expect(game_board.validateNeighborCounts());
     try bitset.toggleFlag(55, 1);
 
     try testing.expect(try game_board.revealCell(&bitset, 1, 0, 0) == .Safe);
@@ -409,6 +402,7 @@ test "flood_fill_doesnt_cross_flags" {
     for (0..100) |i| {
         if (i == 55) continue;
         try testing.expect(!try bitset.flagged(i, 1));
+        try testing.expect(game_board.validateNeighborCounts());
     }
 }
 
