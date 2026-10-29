@@ -23,7 +23,11 @@ pub fn main(init: std.process.Init) !void {
     const comptimeInit = config.width != null and config.height != null and config.num_mines != null;
 
     // Buffer not used if comptime board being used, hence else [0]u8
-    var buff: if (!comptimeInit) [OPTIONS.width * OPTIONS.height * @sizeOf(GameBoard.Cell) + OPTIONS.width * OPTIONS.height * @sizeOf(u32)]u8 else [0]u8 = undefined;
+    const boardSize = OPTIONS.width * OPTIONS.height;
+    var buff: if (!comptimeInit) [
+        (boardSize * @sizeOf(GameBoard.Cell)) // Space for cells array
+        + ((boardSize + (boardSize & 1)) * @sizeOf(u32)) // Space flood-fill stack, and optionally one more u32 to account for alignment
+    ]u8 else [0]u8 = undefined;
     var allocImpl = (comptime GameAllocator.getType(comptimeInit)).init(&buff);
 
     // var allocImpl = std.heap.DebugAllocator(.{}){};
