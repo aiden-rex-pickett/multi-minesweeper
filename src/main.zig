@@ -15,7 +15,6 @@ const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
 const CUSTOM_OPTS = .{ .width = 3, .height = 3, .numMines = 0 };
 
 const comptimeInit = config.width != null and config.height != null and config.numMines != null;
-
 const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? } else BEGINNER_OPTS;
 
 pub fn main(init: std.process.Init) !void {
@@ -25,12 +24,11 @@ pub fn main(init: std.process.Init) !void {
     const numTeams = 1;
 
     const boardSize = OPTIONS.width * OPTIONS.height;
-
     const flagBitsetSize = (boardSize / 64 + if (boardSize & 63 != 0) @as(u64, 1) else @as(u64, 0)) * numTeams * 8;
     const floodFillStackSize = boardSize * @sizeOf(u32);
     const cellArraySize = boardSize * @sizeOf(GameBoard.Cell);
 
-    const totalSize = flagBitsetSize + floodFillStackSize + cellArraySize + 8; // 8 more bytes to resolve alignment issues
+    const totalSize = flagBitsetSize + floodFillStackSize + cellArraySize + 300; // 8 more bytes to resolve alignment issues
 
     // TODO: Main will segfault immediately if stack size too big, so find a way to measure how much we
     // need to allocate and defer to allocating a page from the OS instead in that case
@@ -42,9 +40,10 @@ pub fn main(init: std.process.Init) !void {
     // defer _ = allocImpl.deinit();
 
     var gameBoard = try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
-    var flagBitset = try FlagBitset.init(allocImpl.allocator(), boardSize, numTeams);
-
     defer gameBoard.deinit();
+
+    var flagBitset = try FlagBitset.init(allocImpl.allocator(), boardSize, numTeams);
+    defer flagBitset.deinit();
 
     try runGame(&gameBoard, &flagBitset, TerminalGameIo, init.io);
 }
