@@ -79,6 +79,8 @@ pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
 
+// TODO: add function that takes in allocator and comptime string representing board, parse it, and return a valid board
+
 /// Gets an optional pointer to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
 inline fn getCellMutable(self: *const Self, row: i32, col: i32) ?*Cell {
