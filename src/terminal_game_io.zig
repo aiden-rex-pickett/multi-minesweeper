@@ -119,5 +119,6 @@ fn parseAction(line: []const u8) !GameIo.Action {
         .row = try std.fmt.parseInt(i32, line[rowStart .. rowEnd + 1], 10),
         .col = try std.fmt.parseInt(i32, line[colStart .. colEnd + 1], 10),
         .flag = flag,
+        .team = 1, // Singleplayer
     };
 }

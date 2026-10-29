@@ -8,11 +8,13 @@ pub const Action = struct {
     row: i32,
     col: i32,
     flag: bool,
+    team: u32,
 };
 
 /// The required methods to be a gameIo interface
 const reqMethods = .{
     // TODO: Change these to not be anyerror but some more useful error union
+    // TODO: May need to change to also take in bitset now
     .{ .name = "renderBoard", .signature = fn (board: *const GameBoard) anyerror!void },
     .{ .name = "renderBoardDebug", .signature = fn (board: *const GameBoard) anyerror!void },
     .{ .name = "getUserInput", .signature = fn (io: std.Io) anyerror!Action },
