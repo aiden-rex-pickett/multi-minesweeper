@@ -33,7 +33,7 @@ pub fn main(init: std.process.Init) !void {
     // TODO: Main will segfault immediately if stack size too big, so find a way to measure how much we
     // need to allocate and defer to allocating a page from the OS instead in that case
     // (either huge boards or hundreds of teams cause this)
-    var buff: [totalSize]u8 = undefined;
+    var buff: [totalSize]u8 align(64) = undefined;
     var allocImpl = std.heap.FixedBufferAllocator.init(&buff);
 
     // var allocImpl = std.heap.DebugAllocator(.{}){};
