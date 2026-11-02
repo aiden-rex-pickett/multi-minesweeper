@@ -144,10 +144,9 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
         stackTopNext -= 1;
 
         if (self.cells[currCellIndex].neighbors > 0) continue;
-        const width = self.width;
 
-        const currCellRow = currCellIndex / width;
-        const currCellCol = currCellIndex % width;
+        const currCellRow = currCellIndex / self.width;
+        const currCellCol = currCellIndex % self.width;
 
         const directions = [_]struct { dr: i32, dc: i32 }{
             .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
