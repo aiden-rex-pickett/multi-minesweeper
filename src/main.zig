@@ -95,6 +95,34 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     }
 }
 
+/// Contrived headless performance for flood fill
+fn perfTestFloodFill(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var gameBoard = try GameBoard.init(alloc, GameBoard.MAX_DIMENSION, GameBoard.MAX_DIMENSION, 0, rand);
+    defer gameBoard.deinit();
+
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, 1);
+    defer flagBitset.deinit();
+
+    if (try gameBoard.revealCell(&flagBitset, 1, 10, 0) == .Win) return else unreachable;
+}
+
+/// Contrived headless performance test for flag bitset
+fn perfTestFlagging(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
+    defer flagBitset.deinit();
+    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
+        flagBitset.toggleFlag(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
+    }
+}
+
+/// Contrived headless performance test for flag bitset
+fn perfTestFlagged(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
+    defer flagBitset.deinit();
+    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
+        _ = flagBitset.flagged(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
+    }
+}
 /// This function validates at compile time that the provided compile time arguments are valid
 inline fn checkComptimeArgs() void {
     var check: comptime_int = 0;
