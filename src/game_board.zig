@@ -9,7 +9,7 @@ const FlagBitset = @import("flag_bitset.zig");
 const Self = @This();
 
 pub const MAX_DIMENSION: u32 = 10_000;
-pub const MAX_TEAMS: u10 = ~@as(u10, 0);
+pub const MAX_TEAMS: u10 = ~@as(u10, 0) - 1; // -1 because no team with id 0
 
 cells: []Cell, // Array of cells representing the board
 width: u32, // Board width
@@ -143,8 +143,6 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
         const currCellIndex = stack[stackTopNext - 1];
         stackTopNext -= 1;
 
-        if (self.cells[currCellIndex].neighbors > 0) continue;
-
         const currCellRow = currCellIndex / self.width;
         const currCellCol = currCellIndex % self.width;
 
@@ -165,9 +163,14 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
             const flagged = flagBitset.flaggedUnchecked(newIndex, team);
             if (!newCell.revealed and !flagged) {
                 newCell.revealed = true;
+
                 self.cellsLeft -= 1;
-                stack[stackTopNext] = newIndex;
-                stackTopNext += 1;
+                if (self.cellsLeft == 0) return;
+
+                if (newCell.neighbors == 0) {
+                    stack[stackTopNext] = newIndex;
+                    stackTopNext += 1;
+                }
             }
         }
     }
