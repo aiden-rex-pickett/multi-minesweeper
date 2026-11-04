@@ -47,7 +47,7 @@ fn printBoard(board: *const GameBoard, flagBitset: *const FlagBitset, cellPrint:
     for (0..board.width) |_| {
         print("----", .{});
     }
-    print("\n", .{});
+    print("-\n", .{});
     for (0..board.height) |row| {
         print("{d:^3}", .{row});
         for (0..board.width) |col| {
@@ -58,7 +58,7 @@ fn printBoard(board: *const GameBoard, flagBitset: *const FlagBitset, cellPrint:
         for (0..board.width) |_| {
             print("----", .{});
         }
-        print("\n", .{});
+        print("-\n", .{});
     }
 }
 

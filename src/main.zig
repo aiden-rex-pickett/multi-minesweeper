@@ -138,8 +138,14 @@ inline fn checkComptimeArgs() void {
     if (config.width.? <= 0)
         @compileError("Comptime board initalization attempted with 0 width board, make sure -Dwidth is greater than 0");
 
+    if (config.width.? > GameBoard.MAX_DIMENSION)
+        @compileError("Comptime board initalization attempted with width larger than max dimension");
+
     if (config.height.? <= 0)
         @compileError("Comptime board initalization attempted with 0 height board, make sure -Dheight is greater than 0");
+
+    if (config.height.? > GameBoard.MAX_DIMENSION)
+        @compileError("Comptime board initalization attempted with height larger than max dimension");
 
     if (config.numMines.? > config.width.? * config.height.?)
         @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
