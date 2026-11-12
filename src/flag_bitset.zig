@@ -55,7 +55,7 @@ inline fn getBitsetIndex(self: *const Self, index: usize, team: usize) error{ In
         return error.InvalidTeamNumber;
 
     const bitsetIndex = ((team - 1) * self.teamSetWidth) + index / 64;
-    return if (bitsetIndex >= self.bitsets.len) error.InvalidCell else bitsetIndex;
+    return if (bitsetIndex < self.bitsets.len) bitsetIndex else error.InvalidCell ;
 }
 
 /// Unchecked version of flagged, don't use until production or you are sure it will speed things up

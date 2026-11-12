@@ -604,22 +604,427 @@ test "other_player_click_other_team_flag_works" {
     try testing.expect(try game_board.revealCell(&bitset, 2, 0, 0) == .Win);
 }
 
-test "sum_crazy" {
+test "flood_fill_doesnt_cross_numbered_gap" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
 
     const format =
-        \\5 5
-        \\...XX
-        \\X....
-        \\.....
-        \\.....
-        \\....X
+        \\6 7
+        \\......
+        \\......
+        \\......
+        \\XX..XX
+        \\......
+        \\......
+        \\......
     ;
     var board: Self = try .comptimeFormatInit(interface, format);
-    for (board.cells) |cell| {
-        print("{}", .{cell});
-    }
     defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 6 * 7, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 6, 0) == .Safe);
+    for (0..4) |row| {
+        for (0..6) |col| {
+            const cell = board.getCell(@as(i32, @intCast(row)), @as(i32, @intCast(col))).?;
+            try testing.expect(!cell.revealed);
+        }
+    }
+    for (4..7) |row| {
+        for (0..6) |col| {
+            const cell = board.getCell(@as(i32, @intCast(row)), @as(i32, @intCast(col))).?;
+            try testing.expect(cell.revealed);
+        }
+    }
+}
+
+test "flood_fill_crosses_0_gap" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\6 7
+        \\......
+        \\......
+        \\......
+        \\XX...X
+        \\......
+        \\......
+        \\......
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 6 * 7, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 6, 0) == .Win);
+}
+
+test "flood_fill_doesnt_cross_0_gap_when_team_flagged" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\6 7
+        \\......
+        \\......
+        \\......
+        \\X...XX
+        \\......
+        \\......
+        \\......
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 6 * 7, 1);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(Self.getCellIndex(3, 2, 6), 1);
+    try testing.expect(try board.revealCell(&bitset, 1, 6, 0) == .Safe);
+    for (0..4) |row| {
+        for (0..6) |col| {
+            const cell = board.getCell(@as(i32, @intCast(row)), @as(i32, @intCast(col))).?;
+            if (row == 3 and (col == 1 or col == 3)) {
+                try testing.expect(cell.revealed);
+                continue;
+            }
+            try testing.expect(!cell.revealed);
+        }
+    }
+    for (4..7) |row| {
+        for (0..6) |col| {
+            const cell = board.getCell(@as(i32, @intCast(row)), @as(i32, @intCast(col))).?;
+            try testing.expect(cell.revealed);
+        }
+    }
+}
+
+test "flood_fill_crosses_flagged_0_gap_when_other_team_flagged" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\6 7
+        \\......
+        \\......
+        \\......
+        \\XX...X
+        \\......
+        \\......
+        \\......
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 6 * 7, 2);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(getCellIndex(3, 3, 6), 2);
+    try testing.expect(try board.revealCell(&bitset, 2, 6, 0) == .Safe);
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Win);
+}
+
+test "flood_fill_self_boxed_flags_no_win" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\6 7
+        \\......
+        \\......
+        \\......
+        \\......
+        \\......
+        \\......
+        \\......
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 6 * 7, 1);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(getCellIndex(2, 0, 6), 1);
+    try bitset.toggleFlag(getCellIndex(2, 1, 6), 1);
+    try bitset.toggleFlag(getCellIndex(2, 2, 6), 1);
+    try bitset.toggleFlag(getCellIndex(1, 2, 6), 1);
+    try bitset.toggleFlag(getCellIndex(0, 2, 6), 1);
+
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(try board.revealCell(&bitset, 1, 6, 0) == .Safe);
+    try testing.expect(board.cellsLeft == 5);
+}
+
+test "flood_fill_diagonal_0_gap_fills" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\.....X..
+        \\.....X..
+        \\.....X..
+        \\........
+        \\........
+        \\XXX.....
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 7, 7) == .Win);
+}
+
+test "flood_fill_diagonal_0_gap_fills_doesn't_win_mines_next_to_wall" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\........
+        \\.....X..
+        \\.....X..
+        \\........
+        \\........
+        \\.XX.....
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 7, 7) == .Safe);
+    try testing.expect(board.cellsLeft == 2);
+}
+
+test "flood_fill_diagonal_number_gap_doesn't_win" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\....X...
+        \\....X...
+        \\....X...
+        \\........
+        \\........
+        \\XXX.....
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(try board.revealCell(&bitset, 1, 7, 7) == .Win);
+}
+
+test "flood_fill_diagonal_0_flagged_doesn't_win" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\.....X..
+        \\.....X..
+        \\.....X..
+        \\........
+        \\........
+        \\XXX.....
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(getCellIndex(4, 4, 8), 1);
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    var board2: Self = try .comptimeFormatInit(interface, format);
+    defer board2.deinit();
+    try testing.expect(try board2.revealCell(&bitset, 1, 7, 7) == .Safe);
+
+    try bitset.toggleFlag(getCellIndex(4, 4, 8), 1);
+    try bitset.toggleFlag(getCellIndex(3, 3, 8), 1);
+
+    var board3: Self = try .comptimeFormatInit(interface, format);
+    defer board3.deinit();
+    try testing.expect(try board3.revealCell(&bitset, 1, 7, 7) == .Safe);
+
+    var board4: Self = try .comptimeFormatInit(interface, format);
+    defer board4.deinit();
+    try testing.expect(try board4.revealCell(&bitset, 1, 0, 0) == .Safe);
+}
+
+test "flood_fill_one_gap_around_no_win" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\........
+        \\........
+        \\.XXXXXX.
+        \\.XXXXXX.
+        \\.XXXXXX.
+        \\.XXXXXX.
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 7, 7) == .Safe);
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(board.cellsLeft == 8);
+}
+
+test "flood_fill_one_gap_one_side_no_win" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\........
+        \\........
+        \\.XXXXXX.
+        \\.XXXXXX.
+        \\.XXXXXX.
+        \\.XXXXXX.
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 7, 7) == .Safe);
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(board.cellsLeft == 8);
+}
+
+test "flood_fill_two_gap_around_win" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\........
+        \\........
+        \\.XXXX...
+        \\.XXXX...
+        \\.XXXX...
+        \\.XXXX...
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(board.cellsLeft == 4);
+}
+
+test "flood_fill_flag_in_gap_goes_around" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\........
+        \\........
+        \\.....X..
+        \\........
+        \\........
+        \\..X.....
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 1);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(getCellIndex(4, 4, 8), 1);
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Safe);
+    try testing.expect(board.cellsLeft == 1);
+    try bitset.toggleFlag(getCellIndex(4, 4, 8), 1);
+    try testing.expect(try board.revealCell(&bitset, 1, 4, 4) == .Win);
+}
+
+test "flood_fill_diagonal_0_flagged_wins_if_enemy_flag" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\8 8
+        \\.....X..
+        \\.....X..
+        \\.....X..
+        \\........
+        \\........
+        \\XXX.....
+        \\........
+        \\........
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    defer board.deinit();
+
+    var bitset: FlagBitset = try .init(interface, 8 * 8, 2);
+    defer bitset.deinit();
+
+    try bitset.toggleFlag(getCellIndex(4, 4, 8), 2);
+    try testing.expect(try board.revealCell(&bitset, 1, 0, 0) == .Win);
+    var board2: Self = try .comptimeFormatInit(interface, format);
+    defer board2.deinit();
+    try testing.expect(try board2.revealCell(&bitset, 1, 7, 7) == .Win);
+
+    try bitset.toggleFlag(getCellIndex(4, 4, 8), 2);
+    try bitset.toggleFlag(getCellIndex(3, 3, 8), 2);
+
+    var board3: Self = try .comptimeFormatInit(interface, format);
+    defer board3.deinit();
+    try testing.expect(try board3.revealCell(&bitset, 1, 7, 7) == .Win);
+
+    var board4: Self = try .comptimeFormatInit(interface, format);
+    defer board4.deinit();
+    try testing.expect(try board4.revealCell(&bitset, 1, 0, 0) == .Win);
 }
