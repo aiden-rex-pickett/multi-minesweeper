@@ -14,6 +14,7 @@ const INTERMEDIATE_OPTS = .{ .width = 16, .height = 16, .numMines = 40 };
 const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
 const CUSTOM_OPTS = .{ .width = 3, .height = 3, .numMines = 0 };
 
+// TODO: Add comptime option for reading from a file and generating the board described in the file
 const comptimeInit = config.width != null and config.height != null and config.numMines != null;
 const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? } else BEGINNER_OPTS;
 
