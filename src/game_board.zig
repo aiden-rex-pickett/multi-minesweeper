@@ -217,10 +217,10 @@ fn getBlueprintFromFormat(comptime fmt: []const u8) struct {
     var cellsLeft = 0;
     for (0..boardMetadata.height) |i| {
         const line = lines.next() orelse compileErrorComptimeFormatInit(std.fmt.comptimePrint("Not enough rows provided for the given height, expected {}, got {}", .{ boardMetadata.height, i }), fmt);
-        if (line.len != boardMetadata.width) compileErrorComptimeFormatInit(std.fmt.comptimePrint("Row {} has invalid width, expected {} but was {}", .{ idx / boardMetadata.height, boardMetadata.width, line.len }), fmt);
+        if (line.len != boardMetadata.width) compileErrorComptimeFormatInit(std.fmt.comptimePrint("Row {} has invalid width, expected {} but was {}", .{ idx / boardMetadata.width, boardMetadata.width, line.len }), fmt);
 
         for (line) |char| {
-            if (char != 'X' and char != '.') compileErrorComptimeFormatInit(std.fmt.comptimePrint("Non 'X' or '.' character '{c}' appeared in provided format at row {}, col {}", .{ char, idx / boardMetadata.height, idx % boardMetadata.height }), fmt);
+            if (char != 'X' and char != '.') compileErrorComptimeFormatInit(std.fmt.comptimePrint("Non 'X' or '.' character '{c}' appeared in provided format at row {}, col {}", .{ char, idx / boardMetadata.width, idx % boardMetadata.width }), fmt);
             if (char == '.') cellsLeft += 1;
 
             cells[idx] = Cell{ .mine = char == 'X', .neighbors = 0, .revealed = false, .team = 0 };
