@@ -36,17 +36,17 @@ pub fn main(init: std.process.Init) !void {
     var buff: [totalSize]u8 align(64) = undefined;
     var allocImpl = std.heap.FixedBufferAllocator.init(&buff);
 
-    // var allocImpl = std.heap.DebugAllocator(.{}){};
-    // defer _ = allocImpl.deinit();
+    var heapAlloc = std.heap.DebugAllocator(.{}){};
+    defer _ = heapAlloc.deinit();
 
     var gameBoard = if (config.boardFile) |_|
         // "board_file" is name of an anonymous import not a real file. This allows files from anywhere on the system to be used see build.zig for why.
-        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile("board_file"))
+        try GameBoard.comptimeFormatInit(heapAlloc.allocator(), @embedFile("board_file"))
     else
         try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     defer gameBoard.deinit();
 
-    var flagBitset = try FlagBitset.init(allocImpl.allocator(), boardSize, numTeams);
+    var flagBitset = try FlagBitset.init(allocImpl.allocator(), gameBoard.width * gameBoard.height, numTeams);
     defer flagBitset.deinit();
 
     try runGame(&gameBoard, &flagBitset, TerminalGameIo, init.io);
@@ -56,7 +56,7 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoardDebug(gameBoard, flagBitset);
+        try GameIoImpl.renderBoard(gameBoard, flagBitset);
 
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {

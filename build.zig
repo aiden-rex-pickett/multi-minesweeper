@@ -32,8 +32,10 @@ fn comptimeBoardOptions(b: *std.Build, source_module: *std.Build.Module) *Step.O
     options.addOption(?[]const u8, "boardFile", boardFile);
 
     // Anonymous import for board file so that passed file can live anywhere on the system
-    const fileLazyPath: std.Build.LazyPath = if (boardFile) |path| .{ .cwd_relative = path } else b.path("");
-    source_module.addAnonymousImport("board_file", .{ .root_source_file = fileLazyPath });
+    if (boardFile) |path| {
+        const fileLazyPath: std.Build.LazyPath = .{ .cwd_relative = path };
+        source_module.addAnonymousImport("board_file", .{ .root_source_file = fileLazyPath });
+    }
 
     return options;
 }

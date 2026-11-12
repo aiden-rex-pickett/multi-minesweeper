@@ -205,6 +205,7 @@ fn getBlueprintFromFormat(comptime fmt: []const u8) struct {
     cellsLeft: u32,
 } {
     if (!@inComptime()) @compileError("The getBlueprintFromFormat function can only be used in comptime");
+    @setEvalBranchQuota(10_000);
 
     const boardMetadata = boardMetadataFromFormat(fmt);
 
