@@ -82,7 +82,7 @@ pub fn deinit(self: *const Self) void {
 /// Returns number of bytes needed for a board of the given width and height
 pub inline fn getBytesNeeded(width: u32, height: u32) u32 {
     const cellSize = width * height * @sizeOf(Cell);
-    const bfsQueueSize = ((width * height + 1) / 2) * @sizeOf(u32);
+    const bfsQueueSize = width * height * @sizeOf(u32);
     return cellSize + bfsQueueSize;
 }
 
@@ -138,7 +138,7 @@ pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i3
 
 /// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
 fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, col: u32) error{OutOfMemory}!void {
-    var queue = try self.allocator.alloc(u32, (self.width * self.height + 1) / 2);
+    var queue = try self.allocator.alloc(u32, self.width * self.height); // Monotonic queue
     defer self.allocator.free(queue);
 
     var head: usize = 0;
@@ -154,7 +154,6 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
     while (head != tail) {
         const currCellIndex = queue[head];
         head += 1;
-        if (head == queue.len) head = 0;
 
         const currCellRow = currCellIndex / self.width;
         const currCellCol = currCellIndex % self.width;
@@ -178,7 +177,6 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
                 if (newCell.neighbors == 0) {
                     queue[tail] = newIndex;
                     tail += 1;
-                    if (tail == queue.len) tail = 0;
                 }
             }
         }
