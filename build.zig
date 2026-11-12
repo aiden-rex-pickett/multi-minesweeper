@@ -19,15 +19,17 @@ pub fn build(b: *std.Build) void {
 }
 
 fn comptimeBoardOptions(b: *std.Build) *Step.Options {
-    const width = b.option(u32, "width", "Board Width, only has an effect if using -Dfixed=true");
-    const height = b.option(u32, "height", "Board Height, only has an effect if using -Dfixed=true");
-    const numMines = b.option(u32, "numMines", "Number of mines, only has an effect if using -Dfixed=true");
+    const width = b.option(u32, "width", "Board width, for comptime argument boards");
+    const height = b.option(u32, "height", "Board heigh, for comptime argument boardst");
+    const numMines = b.option(u32, "numMines", "Number of mines, for comptime argument boardss");
+    const boardFile = b.option([]const u8, "boardFile", "File to build the minesweeper board from");
 
     const options = b.addOptions();
 
     options.addOption(?u32, "width", width);
     options.addOption(?u32, "height", height);
     options.addOption(?u32, "numMines", numMines);
+    options.addOption(?[]const u8, "boardFile", boardFile);
 
     return options;
 }

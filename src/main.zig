@@ -20,7 +20,7 @@ const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.h
 
 pub fn main(init: std.process.Init) !void {
     comptime checkComptimeArgs();
-    // const rngImpl: std.Random.IoSource = .{ .io = init.io };
+    const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
     const numTeams = 1;
 
@@ -40,19 +40,10 @@ pub fn main(init: std.process.Init) !void {
     // var allocImpl = std.heap.DebugAllocator(.{}){};
     // defer _ = allocImpl.deinit();
 
-    const format =
-        \\8 8
-        \\........
-        \\........
-        \\.....X..
-        \\........
-        \\........
-        \\..X.....
-        \\........
-        \\........
-    ;
-    var gameBoard = try GameBoard.comptimeFormatInit(allocImpl.allocator(), format);
-    // var gameBoard = try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
+    var gameBoard = if (config.boardFile) |filename|
+        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile(filename))
+    else
+        try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     defer gameBoard.deinit();
 
     var flagBitset = try FlagBitset.init(allocImpl.allocator(), boardSize, numTeams);
@@ -65,7 +56,7 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoard(gameBoard, flagBitset);
+        try GameIoImpl.renderBoardDebug(gameBoard, flagBitset);
 
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {
@@ -147,8 +138,11 @@ inline fn checkComptimeArgs() void {
 
     if (check == 0) return;
 
+    if (check > 0 and config.boardFile != null)
+        @compileError("Comptime board initalization flags present while attempting to generate a board from a board file. -Dwidth, -Dheight, and -DnumMines are mutually exclusive with -DboardFile");
+
     if (check != 3)
-        @compileError("Comptime board initalization attempted without providing all of the following arguments: -Dwidth, -Dheight, and -Dnum_mines arguments");
+        @compileError("Comptime board initalization attempted without providing all of the following arguments: -Dwidth, -Dheight, and -DnumMines arguments");
 
     if (config.width.? <= 0)
         @compileError("Comptime board initalization attempted with 0 width board, make sure -Dwidth is greater than 0");
@@ -163,5 +157,5 @@ inline fn checkComptimeArgs() void {
         @compileError("Comptime board initalization attempted with height larger than max dimension");
 
     if (config.numMines.? > config.width.? * config.height.?)
-        @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -Dnum_mines <= -Dwidth * -Dheight");
+        @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -DnumMines <= -Dwidth * -Dheight");
 }

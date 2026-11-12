@@ -227,7 +227,8 @@ fn getBlueprintFromFormat(comptime fmt: []const u8) struct {
             idx += 1;
         }
     }
-    if (lines.next()) |_| compileErrorComptimeFormatInit(std.fmt.comptimePrint("Too many rows provided for the given height, only expected {}", .{boardMetadata.height}), fmt);
+    // @compileLog(fmt);
+    if (lines.next()) |line| if (line.len > 1) compileErrorComptimeFormatInit(std.fmt.comptimePrint("Too many rows provided for the given height, only expected {}", .{boardMetadata.height}), fmt);
 
     for (cells, 0..) |cell, i| {
         if (!cell.mine) continue;
