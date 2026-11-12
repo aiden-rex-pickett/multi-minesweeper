@@ -37,6 +37,11 @@ pub fn deinit(self: *const Self) void {
     self.allocator.free(self.bitsets);
 }
 
+/// Returns number of bytes needed for a bitset for the given number of cells and number of teams
+pub inline fn getBytesNeeded(cellSize: u32, numTeams: u32) u32 {
+    return (cellSize / 64 + if (cellSize & 63 != 0) @as(u64, 1) else @as(u64, 0)) * numTeams * 8;
+}
+
 /// Tells if a cell is flagged for a team in the bitset
 pub inline fn flagged(self: *const Self, index: usize, team: usize) error{ InvalidTeamNumber, InvalidCell }!bool {
     const bitsetIndex = try self.getBitsetIndex(index, team);
@@ -55,7 +60,7 @@ inline fn getBitsetIndex(self: *const Self, index: usize, team: usize) error{ In
         return error.InvalidTeamNumber;
 
     const bitsetIndex = ((team - 1) * self.teamSetWidth) + index / 64;
-    return if (bitsetIndex < self.bitsets.len) bitsetIndex else error.InvalidCell ;
+    return if (bitsetIndex < self.bitsets.len) bitsetIndex else error.InvalidCell;
 }
 
 /// Unchecked version of flagged, don't use until production or you are sure it will speed things up

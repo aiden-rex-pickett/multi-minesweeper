@@ -79,6 +79,13 @@ pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
 
+/// Returns number of bytes needed for a board of the given width and height
+pub inline fn getBytesNeeded(width: u32, height: u32) u32 {
+    const cellSize = width * height * @sizeOf(Cell);
+    const bfsQueueSize = ((width * height + 1) / 2) * @sizeOf(u32);
+    return cellSize + bfsQueueSize;
+}
+
 /// Gets an optional pointer to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
 inline fn getCellMutable(self: *const Self, row: i32, col: i32) ?*Cell {
@@ -131,24 +138,27 @@ pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i3
 
 /// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
 fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, col: u32) error{OutOfMemory}!void {
-    var stack = try self.allocator.alloc(u32, self.width * self.height);
-    defer self.allocator.free(stack);
-    stack[0] = getCellIndex(row, col, self.width);
+    var queue = try self.allocator.alloc(u32, (self.width * self.height + 1) / 2);
+    defer self.allocator.free(queue);
 
-    var stackTopNext: usize = 1;
+    var head: usize = 0;
+    var tail: usize = 1;
+    queue[0] = getCellIndex(row, col, self.width);
 
-    while (stackTopNext > 0) {
-        const currCellIndex = stack[stackTopNext - 1];
-        stackTopNext -= 1;
+    const directions = [_]struct { dr: i32, dc: i32 }{
+        .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
+        .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
+        .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
+    };
+
+    while (head != tail) {
+        const currCellIndex = queue[head];
+        head += 1;
+        if (head == queue.len) head = 0;
 
         const currCellRow = currCellIndex / self.width;
         const currCellCol = currCellIndex % self.width;
 
-        const directions = [_]struct { dr: i32, dc: i32 }{
-            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
-            .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
-            .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
-        };
         for (directions) |direction| {
             const newRowSigned: i32 = @as(i32, @intCast(currCellRow)) + direction.dr;
             const newColSigned: i32 = @as(i32, @intCast(currCellCol)) + direction.dc;
@@ -166,8 +176,9 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
                 if (self.cellsLeft == 0) return;
 
                 if (newCell.neighbors == 0) {
-                    stack[stackTopNext] = newIndex;
-                    stackTopNext += 1;
+                    queue[tail] = newIndex;
+                    tail += 1;
+                    if (tail == queue.len) tail = 0;
                 }
             }
         }

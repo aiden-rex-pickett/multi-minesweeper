@@ -1,6 +1,5 @@
 const std = @import("std");
 const print = std.debug.print;
-const Io = std.Io;
 
 const config = @import("config");
 
@@ -12,36 +11,36 @@ const TerminalGameIo = @import("terminal_game_io.zig");
 const BEGINNER_OPTS = .{ .width = 9, .height = 9, .numMines = 10 };
 const INTERMEDIATE_OPTS = .{ .width = 16, .height = 16, .numMines = 40 };
 const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
-const CUSTOM_OPTS = .{ .width = 3, .height = 3, .numMines = 0 };
+const CUSTOM_OPTS = .{ .width = 100, .height = 100, .numMines = 0 };
 
 const comptimeInit = config.width != null and config.height != null and config.numMines != null;
-const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? } else BEGINNER_OPTS;
+const OPTIONS = if (!comptimeInit) BEGINNER_OPTS else .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? };
 
 pub fn main(init: std.process.Init) !void {
     comptime checkComptimeArgs();
-    const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
+    const rngImpl: std.Random.IoSource = .{ .io = init.io };
     const numTeams = 1;
 
-    const boardSize = OPTIONS.width * OPTIONS.height;
-    const flagBitsetSize = (boardSize / 64 + if (boardSize & 63 != 0) @as(u64, 1) else @as(u64, 0)) * numTeams * 8;
-    const floodFillStackSize = boardSize * @sizeOf(u32);
-    const cellArraySize = boardSize * @sizeOf(GameBoard.Cell);
+    const totalSize =
+        FlagBitset.getBytesNeeded(OPTIONS.width * OPTIONS.height, numTeams) +
+        GameBoard.getBytesNeeded(OPTIONS.width, OPTIONS.height);
+    const bufferSize = totalSize + (totalSize % 8); // Rounded up to next 64-bit alignment
 
-    const totalSize = flagBitsetSize + floodFillStackSize + cellArraySize + 300; // 8 more bytes to resolve alignment issues
+    print("BOARD: {}, FLAGS: {}, TOTAL: {}\n", .{ GameBoard.getBytesNeeded(OPTIONS.width, OPTIONS.height), FlagBitset.getBytesNeeded(OPTIONS.width * OPTIONS.height, numTeams), bufferSize });
 
-    // TODO: Main will segfault immediately if stack size too big, so find a way to measure how much we
-    // need to allocate and defer to allocating a page from the OS instead in that case
-    // (either huge boards or hundreds of teams cause this)
-    var buff: [totalSize]u8 align(64) = undefined;
-    var allocImpl = std.heap.FixedBufferAllocator.init(&buff);
+    const heapAllocate: bool = bufferSize > std.heap.page_size_max;
+    var stackBuff: [if (heapAllocate) 0 else bufferSize]u8 align(64) = undefined;
+    const heapBuff: []u8 align(64) = try std.heap.page_allocator.alloc(u8, if (heapAllocate) bufferSize else 0);
 
-    var heapAlloc = std.heap.DebugAllocator(.{}){};
-    defer _ = heapAlloc.deinit();
+    var allocImpl = std.heap.FixedBufferAllocator.init(if (heapAllocate) heapBuff else &stackBuff);
+
+    // var debugAlloc = std.heap.DebugAllocator(.{}){};
+    // defer _ = debugAlloc.deinit();
 
     var gameBoard = if (config.boardFile) |_|
         // "board_file" is name of an anonymous import not a real file. This allows files from anywhere on the system to be used see build.zig for why.
-        try GameBoard.comptimeFormatInit(heapAlloc.allocator(), @embedFile("board_file"))
+        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile("board_file"))
     else
         try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     defer gameBoard.deinit();
@@ -50,13 +49,15 @@ pub fn main(init: std.process.Init) !void {
     defer flagBitset.deinit();
 
     try runGame(&gameBoard, &flagBitset, TerminalGameIo, init.io);
+
+    if (heapAllocate) std.heap.page_allocator.free(heapBuff);
 }
 
 fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, io: std.Io) anyerror!void {
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try GameIoImpl.renderBoard(gameBoard, flagBitset);
+        // try GameIoImpl.renderBoard(gameBoard, flagBitset);
 
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {
