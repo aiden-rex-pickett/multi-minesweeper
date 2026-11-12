@@ -1,50 +1,79 @@
 const std = @import("std");
-const config = @import("config");
 const print = std.debug.print;
-const Io = std.Io;
 
+const config = @import("config");
+
+const FlagBitset = @import("flag_bitset.zig");
 const GameBoard = @import("game_board.zig");
-const GameIo = @import("game_io.zig");
+const GameIo = @import("game_io_interface.zig");
 const TerminalGameIo = @import("terminal_game_io.zig");
 
+const BEGINNER_OPTS = .{ .width = 9, .height = 9, .numMines = 10 };
+const INTERMEDIATE_OPTS = .{ .width = 16, .height = 16, .numMines = 40 };
+const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
+const CUSTOM_OPTS = .{ .width = 100, .height = 100, .numMines = 0 };
+
+const comptimeInit = config.width != null and config.height != null and config.numMines != null;
+const OPTIONS = if (!comptimeInit) BEGINNER_OPTS else .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? };
+
 pub fn main(init: std.process.Init) !void {
-    const rng_impl: std.Random.IoSource = .{ .io = init.io };
+    comptime checkComptimeArgs();
 
-    var gameBoard: GameBoard = if (config.fixed)
-        GameBoard.comptime_init(rng_impl.interface())
-    else else_branch: {
-        comptime { // Compile-time error if compile-time board generation options provided without providing -Dfixed
-            const conf_opt = .{ .{
-                .name = "Compile-time option -Dheight set without -Dfixed=true set",
-                .val = config.height,
-            }, .{ .name = "Compile-time option -Dwidth set without -Dfixed=true set", .val = config.width }, .{ .name = "Compile-time option -Dnum_mines  set without -Dfixed=true set", .val = config.num_mines } };
-            for (conf_opt) |conf| {
-                if (conf.val) |_| @compileError(conf.name);
-            }
-        }
+    const rngImpl: std.Random.IoSource = .{ .io = init.io };
+    const numTeams = 1;
 
-        const boardWidth = 15;
-        const boardHeight = 15;
-        const numMines = 99;
+    const totalSize =
+        FlagBitset.getBytesNeeded(OPTIONS.width * OPTIONS.height, numTeams) +
+        GameBoard.getBytesNeeded(OPTIONS.width, OPTIONS.height);
+    const bufferSize = totalSize + (totalSize % 8); // Rounded up to next 64-bit alignment
 
-        // WARNING: May need to change this to defer to the heap if stack size becomes an issue
-        var buffer: [boardWidth * boardHeight * @sizeOf(GameBoard.Cell) * 2]u8 align(@alignOf(GameBoard.Cell)) = undefined;
+    print("BOARD: {}, FLAGS: {}, TOTAL: {}\n", .{ GameBoard.getBytesNeeded(OPTIONS.width, OPTIONS.height), FlagBitset.getBytesNeeded(OPTIONS.width * OPTIONS.height, numTeams), bufferSize });
 
-        break :else_branch try GameBoard.init(&buffer, boardWidth, boardHeight, numMines, rng_impl.interface());
-    };
+    const heapAllocate: bool = bufferSize > std.heap.page_size_max;
+    var stackBuff: [if (heapAllocate) 0 else bufferSize]u8 align(64) = undefined;
+    const heapBuff: []u8 align(64) = try std.heap.page_allocator.alloc(u8, if (heapAllocate) bufferSize else 0);
 
-    var gameIo = TerminalGameIo{};
-    const terminalGameIo: GameIo = gameIo.renderer();
+    var allocImpl = std.heap.FixedBufferAllocator.init(if (heapAllocate) heapBuff else &stackBuff);
+
+    // var debugAlloc = std.heap.DebugAllocator(.{}){};
+    // defer _ = debugAlloc.deinit();
+
+    var gameBoard = if (config.boardFile) |_|
+        // "board_file" is name of an anonymous import not a real file. This allows files from anywhere on the system to be used see build.zig for why.
+        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile("board_file"))
+    else
+        try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
+    defer gameBoard.deinit();
+
+    var flagBitset = try FlagBitset.init(allocImpl.allocator(), gameBoard.width * gameBoard.height, numTeams);
+    defer flagBitset.deinit();
+
+    try runGame(&gameBoard, &flagBitset, TerminalGameIo, init.io);
+
+    if (heapAllocate) std.heap.page_allocator.free(heapBuff);
+}
+
+fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, io: std.Io) anyerror!void {
+    comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        try terminalGameIo.renderBoardDebug(&gameBoard);
-        const userAction = try terminalGameIo.getUserInput(init.io);
+        // try GameIoImpl.renderBoard(gameBoard, flagBitset);
+
+        const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {
-            gameBoard.toggleFlag(userAction.row, userAction.col);
-        } else {
-            switch (gameBoard.clickCell(userAction.row, userAction.col)) {
+            const bitsetIndex = GameBoard.getCellIndex(@as(u32, @intCast(userAction.row)), @as(u32, @intCast(userAction.col)), gameBoard.width);
+            flagBitset.toggleFlag(bitsetIndex, userAction.team) catch |err| switch (err) {
+                error.InvalidTeamNumber => {
+                    print("Invalid team number\n", .{});
+                },
+                error.InvalidCell => {
+                    print("Invalid cell, idk how you clicked that parser wrong probably\n", .{});
+                },
+            };
+        } else if (gameBoard.revealCell(flagBitset, userAction.team, userAction.row, userAction.col)) |result| {
+            switch (result) {
                 .Exploded => {
-                    print("OH NO. CELL AT {}, {} WAS A MINE!\n", .{userAction.row, userAction.col});
+                    print("OH NO. CELL AT {}, {} WAS A MINE!\n", .{ userAction.row, userAction.col });
                     break :gameLoop;
                 },
                 .Win => {
@@ -61,9 +90,74 @@ pub fn main(init: std.process.Init) !void {
                     print("Click a valid cell please\n", .{});
                 },
             }
-            print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
+        } else |err| switch (err) {
+            error.OutOfMemory => {
+                print("MEMORY RAN OUT WHILE REVEALING CELLS, LIKELY DURING FLOOD FILL!!! {}", .{err});
+                unreachable;
+            },
         }
+        print("CELLS REMAIN: {}\n", .{gameBoard.cellsLeft});
     }
+}
 
-    _ = gameBoard.validate_neighbor_counts();
+/// This function validates at compile time that the provided compile time arguments are valid
+inline fn checkComptimeArgs() void {
+    if (!@inComptime()) @compileError("The checkComptimeArgs function can only be called in comptime");
+
+    var check: comptime_int = 0;
+    if (config.width != null) check += 1;
+    if (config.height != null) check += 1;
+    if (config.numMines != null) check += 1;
+
+    if (check == 0) return;
+
+    if (check > 0 and config.boardFile != null)
+        @compileError("Comptime board initalization flags present while attempting to generate a board from a board file. -Dwidth, -Dheight, and -DnumMines are mutually exclusive with -DboardFile");
+
+    if (check != 3)
+        @compileError("Comptime board initalization attempted without providing all of the following arguments: -Dwidth, -Dheight, and -DnumMines arguments");
+
+    if (config.width.? <= 0)
+        @compileError("Comptime board initalization attempted with 0 width board, make sure -Dwidth is greater than 0");
+
+    if (config.width.? > GameBoard.MAX_DIMENSION)
+        @compileError("Comptime board initalization attempted with width larger than max dimension");
+
+    if (config.height.? <= 0)
+        @compileError("Comptime board initalization attempted with 0 height board, make sure -Dheight is greater than 0");
+
+    if (config.height.? > GameBoard.MAX_DIMENSION)
+        @compileError("Comptime board initalization attempted with height larger than max dimension");
+
+    if (config.numMines.? > config.width.? * config.height.?)
+        @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -DnumMines <= -Dwidth * -Dheight");
+}
+
+/// Contrived headless performance for flood fill
+fn perfTestFloodFill(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var gameBoard = try GameBoard.init(alloc, GameBoard.MAX_DIMENSION, GameBoard.MAX_DIMENSION, 0, rand);
+    defer gameBoard.deinit();
+
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, 1);
+    defer flagBitset.deinit();
+
+    if (try gameBoard.revealCell(&flagBitset, 1, 10, 0) == .Win) return else unreachable;
+}
+
+/// Contrived headless performance test for flag bitset
+fn perfTestFlagging(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
+    defer flagBitset.deinit();
+    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
+        flagBitset.toggleFlag(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
+    }
+}
+
+/// Contrived headless performance test for flag bitset
+fn perfTestFlagged(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
+    defer flagBitset.deinit();
+    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
+        _ = flagBitset.flagged(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
+    }
 }
