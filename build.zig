@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
         .target = b.standardTargetOptions(.{}),
         .optimize = b.standardOptimizeOption(.{}),
     });
-    source_module.addOptions("config", comptimeBoardOptions(b));
+    source_module.addOptions("config", comptimeBoardOptions(b, source_module));
 
     const exe = b.addExecutable(.{
         .name = "multi-minesweeper",
@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 }
 
-fn comptimeBoardOptions(b: *std.Build) *Step.Options {
+fn comptimeBoardOptions(b: *std.Build, source_module: *std.Build.Module) *Step.Options {
     const width = b.option(u32, "width", "Board width, for comptime argument boards");
     const height = b.option(u32, "height", "Board heigh, for comptime argument boardst");
     const numMines = b.option(u32, "numMines", "Number of mines, for comptime argument boardss");
@@ -30,6 +30,10 @@ fn comptimeBoardOptions(b: *std.Build) *Step.Options {
     options.addOption(?u32, "height", height);
     options.addOption(?u32, "numMines", numMines);
     options.addOption(?[]const u8, "boardFile", boardFile);
+
+    // Anonymous import for board file so that passed file can live anywhere on the system
+    const fileLazyPath: std.Build.LazyPath = if (boardFile) |path| .{ .cwd_relative = path } else b.path("");
+    source_module.addAnonymousImport("board_file", .{ .root_source_file = fileLazyPath });
 
     return options;
 }

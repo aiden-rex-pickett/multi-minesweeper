@@ -14,7 +14,6 @@ const INTERMEDIATE_OPTS = .{ .width = 16, .height = 16, .numMines = 40 };
 const EXPERT_OPTS = .{ .width = 30, .height = 16, .numMines = 99 };
 const CUSTOM_OPTS = .{ .width = 3, .height = 3, .numMines = 0 };
 
-// TODO: Add comptime option for reading from a file and generating the board described in the file
 const comptimeInit = config.width != null and config.height != null and config.numMines != null;
 const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.height.?, .numMines = config.numMines.? } else BEGINNER_OPTS;
 
@@ -40,8 +39,9 @@ pub fn main(init: std.process.Init) !void {
     // var allocImpl = std.heap.DebugAllocator(.{}){};
     // defer _ = allocImpl.deinit();
 
-    var gameBoard = if (config.boardFile) |filename|
-        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile(filename))
+    var gameBoard = if (config.boardFile) |_|
+        // "board_file" is name of an anonymous import not a real file. This allows files from anywhere on the system to be used see build.zig for why.
+        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile("board_file"))
     else
         try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     defer gameBoard.deinit();
@@ -99,34 +99,6 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     }
 }
 
-/// Contrived headless performance for flood fill
-fn perfTestFloodFill(alloc: std.mem.Allocator, rand: std.Random) !void {
-    var gameBoard = try GameBoard.init(alloc, GameBoard.MAX_DIMENSION, GameBoard.MAX_DIMENSION, 0, rand);
-    defer gameBoard.deinit();
-
-    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, 1);
-    defer flagBitset.deinit();
-
-    if (try gameBoard.revealCell(&flagBitset, 1, 10, 0) == .Win) return else unreachable;
-}
-
-/// Contrived headless performance test for flag bitset
-fn perfTestFlagging(alloc: std.mem.Allocator, rand: std.Random) !void {
-    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
-    defer flagBitset.deinit();
-    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
-        flagBitset.toggleFlag(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
-    }
-}
-
-/// Contrived headless performance test for flag bitset
-fn perfTestFlagged(alloc: std.mem.Allocator, rand: std.Random) !void {
-    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
-    defer flagBitset.deinit();
-    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
-        _ = flagBitset.flagged(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
-    }
-}
 /// This function validates at compile time that the provided compile time arguments are valid
 inline fn checkComptimeArgs() void {
     if (!@inComptime()) @compileError("The checkComptimeArgs function can only be called in comptime");
@@ -158,4 +130,33 @@ inline fn checkComptimeArgs() void {
 
     if (config.numMines.? > config.width.? * config.height.?)
         @compileError("Comptime board initalization arguments invalid, more mines than there are cells. Make sure -DnumMines <= -Dwidth * -Dheight");
+}
+
+/// Contrived headless performance for flood fill
+fn perfTestFloodFill(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var gameBoard = try GameBoard.init(alloc, GameBoard.MAX_DIMENSION, GameBoard.MAX_DIMENSION, 0, rand);
+    defer gameBoard.deinit();
+
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, 1);
+    defer flagBitset.deinit();
+
+    if (try gameBoard.revealCell(&flagBitset, 1, 10, 0) == .Win) return else unreachable;
+}
+
+/// Contrived headless performance test for flag bitset
+fn perfTestFlagging(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
+    defer flagBitset.deinit();
+    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
+        flagBitset.toggleFlag(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
+    }
+}
+
+/// Contrived headless performance test for flag bitset
+fn perfTestFlagged(alloc: std.mem.Allocator, rand: std.Random) !void {
+    var flagBitset = try FlagBitset.init(alloc, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION, GameBoard.MAX_TEAMS);
+    defer flagBitset.deinit();
+    for (0..GameBoard.MAX_DIMENSION * 100) |_| {
+        _ = flagBitset.flagged(rand.intRangeAtMost(usize, 0, GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION), rand.intRangeAtMost(usize, 1, GameBoard.MAX_TEAMS)) catch unreachable;
+    }
 }
