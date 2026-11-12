@@ -79,7 +79,112 @@ pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
 
-// TODO: add function that takes in allocator and comptime string representing board, parse it, and return a valid board
+/// Generates a valid game board from a comptime string. The format is the width and height,
+/// followed by a textual representation of the board, Which looks something like this in everyday use:
+///
+/// 4 3
+/// ..X.
+/// ..X.
+/// X...
+pub fn comptimeFormatInit(alloc: std.mem.Allocator, comptime fmt: []const u8) error{OutOfMemory}!Self {
+    const blueprint = comptime getBlueprintFromFormat(fmt);
+
+    const cells = try alloc.alloc(Cell, blueprint.width * blueprint.height);
+    @memcpy(cells, &blueprint.cells);
+
+    return Self{
+        .cells = cells,
+        .width = blueprint.width,
+        .height = blueprint.height,
+        .cellsLeft = blueprint.cellsLeft,
+        .allocator = alloc,
+    };
+}
+
+/// Comptime function to generate a "board blueprint" from a format string. This includes the
+/// width, height, cells left, as well as cells array
+fn getBlueprintFromFormat(comptime fmt: []const u8) struct {
+    cells: [boardMetadataFromFormat(fmt).cellCount]Cell,
+    width: u32,
+    height: u32,
+    cellsLeft: u32,
+} {
+    if (!@inComptime()) @compileError("The getBlueprintFromFormat function can only be used in comptime");
+
+    const boardMetadata = boardMetadataFromFormat(fmt);
+
+    var lines = std.mem.splitScalar(u8, fmt, '\n');
+    _ = lines.next(); // Once as the first line information has already been read from boardMetadataFromFormat
+
+    var idx = 0;
+    var cells: [boardMetadata.width * boardMetadata.height]Cell = undefined;
+
+    var cellsLeft = 0;
+    for (0..boardMetadata.height) |i| {
+        const line = lines.next() orelse compileErrorComptimeFormatInit(std.fmt.comptimePrint("Not enough rows provided for the given height, expected {}, got {}", .{ boardMetadata.height, i }), fmt);
+        if (line.len != boardMetadata.width) compileErrorComptimeFormatInit(std.fmt.comptimePrint("Row {} has invalid width, expected {} but was {}", .{ idx / boardMetadata.height, boardMetadata.width, line.len }), fmt);
+
+        for (line) |char| {
+            if (char != 'X' and char != '.') compileErrorComptimeFormatInit(std.fmt.comptimePrint("Non 'X' or '.' character '{c}' appeared in provided format at row {}, col {}", .{ char, idx / boardMetadata.height, idx % boardMetadata.height }), fmt);
+            if (char == '.') cellsLeft += 1;
+
+            cells[idx] = Cell{ .mine = char == 'X', .neighbors = 0, .revealed = false, .team = 0 };
+            idx += 1;
+        }
+    }
+    if (lines.next()) |_| compileErrorComptimeFormatInit(std.fmt.comptimePrint("Too many rows provided for the given height, only expected {}", .{boardMetadata.height}), fmt);
+
+    for (cells, 0..) |cell, i| {
+        if (!cell.mine) continue;
+        const row = @as(i32, @intCast(i / boardMetadata.width));
+        const col = @as(i32, @intCast(i % boardMetadata.width));
+
+        const directions = [_]struct { dr: i32, dc: i32 }{
+            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 }, .{ .dr = 0, .dc = -1 },
+            .{ .dr = 0, .dc = 1 },   .{ .dr = 1, .dc = -1 }, .{ .dr = 1, .dc = 0 },  .{ .dr = 1, .dc = 1 },
+        };
+        for (directions) |direction| {
+            const newRow = row + direction.dr;
+            const newCol = col + direction.dc;
+            if (newRow < 0 or newRow >= boardMetadata.height or newCol < 0 or newCol >= boardMetadata.width) continue;
+
+            cells[newRow * boardMetadata.width + newCol].neighbors += 1;
+        }
+    }
+
+    return .{
+        .cells = cells,
+        .width = boardMetadata.width,
+        .height = boardMetadata.height,
+        .cellsLeft = cellsLeft,
+    };
+}
+
+/// Helper to get board metadata (the first line) from a format
+inline fn boardMetadataFromFormat(comptime fmt: []const u8) struct {
+    width: u32,
+    height: u32,
+    cellCount: u32,
+} {
+    if (!@inComptime()) @compileError("The boardMetadataFromFormat function can only be used in comptime");
+
+    var firstLine = std.mem.tokenizeScalar(u8, std.mem.sliceTo(fmt, '\n'), ' ');
+    const width = std.fmt.parseInt(usize, firstLine.next() orelse compileErrorComptimeFormatInit("Width not provided", fmt), 10) catch compileErrorComptimeFormatInit("Non-integer width provided", fmt);
+    const height = std.fmt.parseInt(usize, firstLine.next() orelse compileErrorComptimeFormatInit("Height not provided", fmt), 10) catch compileErrorComptimeFormatInit("Non-integer height provided", fmt);
+
+    if (firstLine.next()) |_| compileErrorComptimeFormatInit(std.fmt.comptimePrint("Too many values provided on first line, only provide width and height, space seperated. Provided {s}", .{firstLine.buffer}), fmt);
+
+    return .{
+        .width = width,
+        .height = height,
+        .cellCount = width * height,
+    };
+}
+
+/// A custom formatted compile error for comptime board generation from a format
+inline fn compileErrorComptimeFormatInit(comptime message: []const u8, comptime fmt: []const u8) noreturn {
+    @compileError(std.fmt.comptimePrint("Invalid format for comptime board initalization from format: {s}\n\nComptime Board String was:\n{s}", .{ message, fmt }));
+}
 
 /// Gets an optional pointer to the cell at the provided row and column.
 /// If the row and column are not valid the optional is empty, else the optional is populated
@@ -176,11 +281,13 @@ fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, co
     }
 }
 
+// -------------------- TESTS -------------------- //
+
 /// this function validates that the neighbor numbers for every mine are correct, based
 /// on the number of mine cells surrounding it. For testing purposes and internal validation
 ///
 /// Note that this is only valid in so far as the mine bit is being set correctly
-pub fn validateNeighborCounts(self: *const Self) bool {
+fn validateNeighborCounts(self: *const Self) bool {
     for (self.cells, 0..) |cell, i| {
         const row: i32 = @intCast(i / self.width);
         const col: i32 = @intCast(i % self.width);
@@ -205,8 +312,6 @@ pub fn validateNeighborCounts(self: *const Self) bool {
 
     return true;
 }
-
-// -------------------- TESTS -------------------- //
 
 const gpa = std.heap.DebugAllocator(.{});
 
@@ -497,4 +602,24 @@ test "other_player_click_other_team_flag_works" {
 
     try bitset.toggleFlag(0, 1);
     try testing.expect(try game_board.revealCell(&bitset, 2, 0, 0) == .Win);
+}
+
+test "sum_crazy" {
+    var alloc = gpa{};
+    defer _ = alloc.deinit();
+    const interface = alloc.allocator();
+
+    const format =
+        \\5 5
+        \\...XX
+        \\X....
+        \\.....
+        \\.....
+        \\....X
+    ;
+    var board: Self = try .comptimeFormatInit(interface, format);
+    for (board.cells) |cell| {
+        print("{}", .{cell});
+    }
+    defer board.deinit();
 }

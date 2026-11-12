@@ -19,7 +19,7 @@ const OPTIONS = if (comptimeInit) .{ .width = config.width.?, .height = config.h
 
 pub fn main(init: std.process.Init) !void {
     comptime checkComptimeArgs();
-    const rngImpl: std.Random.IoSource = .{ .io = init.io };
+    // const rngImpl: std.Random.IoSource = .{ .io = init.io };
 
     const numTeams = 1;
 
@@ -39,7 +39,16 @@ pub fn main(init: std.process.Init) !void {
     // var allocImpl = std.heap.DebugAllocator(.{}){};
     // defer _ = allocImpl.deinit();
 
-    var gameBoard = try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
+    const format =
+        \\5 5
+        \\X...X
+        \\.....
+        \\...X.
+        \\.....
+        \\X...X
+    ;
+    var gameBoard = try GameBoard.comptimeFormatInit(allocImpl.allocator(), format);
+    // var gameBoard = try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     defer gameBoard.deinit();
 
     var flagBitset = try FlagBitset.init(allocImpl.allocator(), boardSize, numTeams);
@@ -125,6 +134,8 @@ fn perfTestFlagged(alloc: std.mem.Allocator, rand: std.Random) !void {
 }
 /// This function validates at compile time that the provided compile time arguments are valid
 inline fn checkComptimeArgs() void {
+    if (!@inComptime()) @compileError("The checkComptimeArgs function can only be called in comptime");
+
     var check: comptime_int = 0;
     if (config.width != null) check += 1;
     if (config.height != null) check += 1;
