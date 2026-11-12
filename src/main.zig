@@ -35,12 +35,13 @@ pub fn main(init: std.process.Init) !void {
 
     var allocImpl = std.heap.FixedBufferAllocator.init(if (heapAllocate) heapBuff else &stackBuff);
 
-    // var debugAlloc = std.heap.DebugAllocator(.{}){};
-    // defer _ = debugAlloc.deinit();
+    // Use debug alloc for comptime board parsing
+    var debugAlloc = std.heap.DebugAllocator(.{}){};
+    defer _ = debugAlloc.deinit();
 
     var gameBoard = if (config.boardFile) |_|
         // "board_file" is name of an anonymous import not a real file. This allows files from anywhere on the system to be used see build.zig for why.
-        try GameBoard.comptimeFormatInit(allocImpl.allocator(), @embedFile("board_file"))
+        try GameBoard.comptimeFormatInit(debugAlloc.allocator(), @embedFile("board_file"))
     else
         try GameBoard.init(allocImpl.allocator(), OPTIONS.width, OPTIONS.height, OPTIONS.numMines, rngImpl.interface());
     defer gameBoard.deinit();
@@ -57,7 +58,7 @@ fn runGame(gameBoard: *GameBoard, flagBitset: *FlagBitset, GameIoImpl: anytype, 
     comptime GameIo.validateGameIo(GameIoImpl);
 
     gameLoop: while (true) {
-        // try GameIoImpl.renderBoard(gameBoard, flagBitset);
+        try GameIoImpl.renderBoard(gameBoard, flagBitset);
 
         const userAction = try GameIoImpl.getUserInput(io);
         if (userAction.flag) {

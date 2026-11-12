@@ -578,7 +578,7 @@ test "click_on_flag_nop" {
     try testing.expect(try game_board.revealCell(&bitset, 1, 5, 5) == .Nop);
 }
 
-test "flood_fill_fills after flag toggle cycle" {
+test "flood_fill_fills_after_flag_toggle_cycle" {
     var alloc = gpa{};
     defer _ = alloc.deinit();
     const interface = alloc.allocator();
