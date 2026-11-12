@@ -79,6 +79,101 @@ pub fn deinit(self: *const Self) void {
     self.allocator.free(self.cells);
 }
 
+/// Gets an optional pointer to the cell at the provided row and column.
+/// If the row and column are not valid the optional is empty, else the optional is populated
+inline fn getCellMutable(self: *const Self, row: i32, col: i32) ?*Cell {
+    if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
+    return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
+}
+
+/// Gets an optional constant pointer to the cell at the provided row and column.
+/// If the row and column are not valid the optional is empty, else the optional is populated
+pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*const Cell {
+    if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
+    return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
+}
+
+/// Basically a macro for doing 2d indexing in 1d array.
+pub inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
+    return row * width + col;
+}
+
+/// Type returned by clickCell representing the result of the click
+const RevealResult = enum {
+    Exploded,
+    Safe,
+    Win,
+    Invalid,
+    Nop,
+};
+
+/// Reveals a cell, returning an enum representing what happened
+pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i32, col: i32) error{OutOfMemory}!RevealResult {
+    // If either getting the cell or getting the bitset flagged status fails, then the row and column are invalid
+    const cell = self.getCellMutable(row, col) orelse return .Invalid;
+    const flagged = flagBitset.flagged(getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width), team) catch return .Invalid;
+
+    // If clicking a flagged or already revealed cell, it is a nop
+    if (cell.revealed or flagged) return .Nop;
+
+    cell.revealed = true;
+    if (cell.mine) return .Exploded;
+
+    self.cellsLeft -= 1;
+
+    if (cell.neighbors == 0)
+        try self.floodFill(flagBitset, team, @as(u32, @intCast(row)), @as(u32, @intCast(col)));
+
+    if (self.cellsLeft == 0) return .Win;
+
+    return .Safe;
+}
+
+/// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
+fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, col: u32) error{OutOfMemory}!void {
+    var stack = try self.allocator.alloc(u32, self.width * self.height);
+    defer self.allocator.free(stack);
+    stack[0] = getCellIndex(row, col, self.width);
+
+    var stackTopNext: usize = 1;
+
+    while (stackTopNext > 0) {
+        const currCellIndex = stack[stackTopNext - 1];
+        stackTopNext -= 1;
+
+        const currCellRow = currCellIndex / self.width;
+        const currCellCol = currCellIndex % self.width;
+
+        const directions = [_]struct { dr: i32, dc: i32 }{
+            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
+            .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
+            .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
+        };
+        for (directions) |direction| {
+            const newRowSigned: i32 = @as(i32, @intCast(currCellRow)) + direction.dr;
+            const newColSigned: i32 = @as(i32, @intCast(currCellCol)) + direction.dc;
+
+            if (newRowSigned < 0 or newRowSigned >= self.height or newColSigned < 0 or newColSigned >= self.width) continue;
+
+            const newIndex = getCellIndex(@as(u32, @intCast(newRowSigned)), @as(u32, @intCast(newColSigned)), self.width);
+            const newCell = &self.cells[newIndex];
+
+            const flagged = flagBitset.flaggedUnchecked(newIndex, team);
+            if (!newCell.revealed and !flagged) {
+                newCell.revealed = true;
+
+                self.cellsLeft -= 1;
+                if (self.cellsLeft == 0) return;
+
+                if (newCell.neighbors == 0) {
+                    stack[stackTopNext] = newIndex;
+                    stackTopNext += 1;
+                }
+            }
+        }
+    }
+}
+
 /// Generates a valid game board from a comptime string. The format is the width and height,
 /// followed by a textual representation of the board, Which looks something like this in everyday use:
 ///
@@ -184,101 +279,6 @@ inline fn boardMetadataFromFormat(comptime fmt: []const u8) struct {
 /// A custom formatted compile error for comptime board generation from a format
 inline fn compileErrorComptimeFormatInit(comptime message: []const u8, comptime fmt: []const u8) noreturn {
     @compileError(std.fmt.comptimePrint("Invalid format for comptime board initalization from format: {s}\n\nComptime Board String was:\n{s}", .{ message, fmt }));
-}
-
-/// Gets an optional pointer to the cell at the provided row and column.
-/// If the row and column are not valid the optional is empty, else the optional is populated
-inline fn getCellMutable(self: *const Self, row: i32, col: i32) ?*Cell {
-    if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
-    return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
-}
-
-/// Gets an optional constant pointer to the cell at the provided row and column.
-/// If the row and column are not valid the optional is empty, else the optional is populated
-pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*const Cell {
-    if (row < 0 or row >= self.height or col < 0 or col >= self.width) return null;
-    return &self.cells[getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width)];
-}
-
-/// Basically a macro for doing 2d indexing in 1d array.
-pub inline fn getCellIndex(row: u32, col: u32, width: u32) u32 {
-    return row * width + col;
-}
-
-/// Type returned by clickCell representing the result of the click
-const RevealResult = enum {
-    Exploded,
-    Safe,
-    Win,
-    Invalid,
-    Nop,
-};
-
-/// Reveals a cell, returning an enum representing what happened
-pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i32, col: i32) error{OutOfMemory}!RevealResult {
-    // If either getting the cell or getting the bitset flagged status fails, then the row and column are invalid
-    const cell = self.getCellMutable(row, col) orelse return .Invalid;
-    const flagged = flagBitset.flagged(getCellIndex(@as(u32, @intCast(row)), @as(u32, @intCast(col)), self.width), team) catch return .Invalid;
-
-    // If clicking a flagged or already revealed cell, it is a nop
-    if (cell.revealed or flagged) return .Nop;
-
-    cell.revealed = true;
-    if (cell.mine) return .Exploded;
-
-    self.cellsLeft -= 1;
-
-    if (cell.neighbors == 0)
-        try self.floodFill(flagBitset, team, @as(u32, @intCast(row)), @as(u32, @intCast(col)));
-
-    if (self.cellsLeft == 0) return .Win;
-
-    return .Safe;
-}
-
-/// Runs a flood fill from the provided row and column. It is assumed that the cell at row, column are valid, revealed, and have a neighbor count of 0
-fn floodFill(self: *Self, flagBitset: *const FlagBitset, team: u32, row: u32, col: u32) error{OutOfMemory}!void {
-    var stack = try self.allocator.alloc(u32, self.width * self.height);
-    defer self.allocator.free(stack);
-    stack[0] = getCellIndex(row, col, self.width);
-
-    var stackTopNext: usize = 1;
-
-    while (stackTopNext > 0) {
-        const currCellIndex = stack[stackTopNext - 1];
-        stackTopNext -= 1;
-
-        const currCellRow = currCellIndex / self.width;
-        const currCellCol = currCellIndex % self.width;
-
-        const directions = [_]struct { dr: i32, dc: i32 }{
-            .{ .dr = -1, .dc = -1 }, .{ .dr = -1, .dc = 0 }, .{ .dr = -1, .dc = 1 },
-            .{ .dr = 0, .dc = -1 },  .{ .dr = 0, .dc = 1 },  .{ .dr = 1, .dc = -1 },
-            .{ .dr = 1, .dc = 0 },   .{ .dr = 1, .dc = 1 },
-        };
-        for (directions) |direction| {
-            const newRowSigned: i32 = @as(i32, @intCast(currCellRow)) + direction.dr;
-            const newColSigned: i32 = @as(i32, @intCast(currCellCol)) + direction.dc;
-
-            if (newRowSigned < 0 or newRowSigned >= self.height or newColSigned < 0 or newColSigned >= self.width) continue;
-
-            const newIndex = getCellIndex(@as(u32, @intCast(newRowSigned)), @as(u32, @intCast(newColSigned)), self.width);
-            const newCell = &self.cells[newIndex];
-
-            const flagged = flagBitset.flaggedUnchecked(newIndex, team);
-            if (!newCell.revealed and !flagged) {
-                newCell.revealed = true;
-
-                self.cellsLeft -= 1;
-                if (self.cellsLeft == 0) return;
-
-                if (newCell.neighbors == 0) {
-                    stack[stackTopNext] = newIndex;
-                    stackTopNext += 1;
-                }
-            }
-        }
-    }
 }
 
 // -------------------- TESTS -------------------- //
