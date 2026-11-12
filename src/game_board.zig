@@ -9,7 +9,7 @@ const FlagBitset = @import("flag_bitset.zig");
 const Self = @This();
 
 pub const MAX_DIMENSION: u32 = 10_000;
-pub const MAX_TEAMS: u10 = ~@as(u10, 0) - 1; // -1 because no team with id 0
+pub const MAX_TEAMS: u10 = ~@as(u10, 0);
 
 cells: []Cell, // Array of cells representing the board
 width: u32, // Board width
