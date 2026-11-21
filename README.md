@@ -27,5 +27,5 @@ zig build
 in the root directory. You can also optionally pass the width, height, and number of mines for a board at compile time with the `-Dwidth`, `-Dheight`, and `-Dnum_mines` options. You can also specify an exact board using the -DboardFile option, which is a path to a file that is of the follwing format:
 ```
 <width> <height>
-<height number of width-length lines of either '.' or 'X', where 'X' is a mine cell and '.' is an empty cell
+<height number of width-length lines of either '.' or 'X', where 'X' is a mine cell and '.' is an empty cell>
 ```
