@@ -8,6 +8,8 @@ const GameBoard = @import("game_board.zig");
 
 const Self = @This();
 
+pub const MAX_TEAMS: u10 = ~@as(u10, 0);
+
 bitsets: []u64,
 teamSetWidth: u64,
 allocator: std.mem.Allocator,
@@ -17,7 +19,7 @@ pub fn init(allocator: std.mem.Allocator, boardSize: u32, teamCount: usize) erro
     if (boardSize > GameBoard.MAX_DIMENSION * GameBoard.MAX_DIMENSION or boardSize == 0)
         return error.InvalidDimensions;
 
-    if (teamCount > GameBoard.MAX_TEAMS or teamCount == 0)
+    if (teamCount > MAX_TEAMS or teamCount == 0)
         return error.InvalidTeamNumber;
 
     // Width of the bitset for each team, rounded up to nearest multiple of 64
@@ -384,7 +386,7 @@ test "too_many_teams_invalid" {
     const interface = alloc.allocator();
 
     for (1..100) |i| {
-        try testing.expectError(error.InvalidTeamNumber, Self.init(interface, 100, GameBoard.MAX_TEAMS + i));
+        try testing.expectError(error.InvalidTeamNumber, Self.init(interface, 100, MAX_TEAMS + i));
     }
 }
 

@@ -9,7 +9,6 @@ const FlagBitset = @import("flag_bitset.zig");
 const Self = @This();
 
 pub const MAX_DIMENSION: u32 = 10_000;
-pub const MAX_TEAMS: u10 = ~@as(u10, 0);
 
 cells: []Cell, // Array of cells representing the board
 width: u32, // Board width
@@ -237,7 +236,7 @@ fn getBlueprintFromFormat(comptime fmt: []const u8) struct {
             idx += 1;
         }
     }
-    // @compileLog(fmt);
+
     if (lines.next()) |line| if (line.len > 1) compileErrorComptimeFormatInit(std.fmt.comptimePrint("Too many rows provided for the given height, only expected {}", .{boardMetadata.height}), fmt);
 
     for (cells, 0..) |cell, i| {
