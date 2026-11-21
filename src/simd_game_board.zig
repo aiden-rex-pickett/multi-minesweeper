@@ -61,5 +61,28 @@ zeroCells: []u64,
 cellsLeft: usize,
 allocator: std.mem.Allocator,
 
-// pub fn init(allocator: std.mem.Allocator, width: usize, height: usize, numMines: usize, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
-// }
+pub fn init(allocator: std.mem.Allocator, width: usize, height: usize, numMines: usize, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
+    const totalCells, const overflow = @mulWithOverflow(width, height);
+    if (overflow == 1 or totalCells == 0) return error.InvalidDimensions;
+
+    if (numMines > width * height) return error.TooManyMines;
+
+    const revealedCount = (height + 2) * (width + 2);
+
+    var board = Self{
+        .width = width,
+        .height = height,
+        .revealed = try allocator.alloc(u64, (revealedCount + 63) / 64),
+        .mines = try allocator.alloc(u64, (totalCells + 63) / 64),
+        .zeroCells = try allocator.alloc(u64, (totalCells + 63) / 64),
+        .cellsLeft = totalCells - numMines,
+        .allocator = allocator,
+    };
+    
+    board.revealed[0] = 1;
+    _ = rand;
+
+    // NOTE: I think I should try having just the bare minimum bits allocated for now, expand later if needed.
+}
+
+// TODO: Print board function, observability will be hard on this system
