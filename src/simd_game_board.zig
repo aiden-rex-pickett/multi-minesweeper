@@ -35,3 +35,31 @@
 // ## 5. Build & Perf Reminders
 // - Always benchmark large boards (e.g., `10,000 x 10,000`) with `-Doptimize=ReleaseFast` (default `Debug` safety checks add ~20x–30x overhead on tight loops).
 // - Note that first-touch on freshly `mmap`'d pages triggers kernel zero-fill page faults; reusing the buffer via `fba.reset()` eliminates this on subsequent games.
+
+// Current game_baord.zig public api:
+//  - pub fn init(allocator: std.mem.Allocator, width: u32, height: u32, numMines: u32, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self
+//  - pub fn deinit(self: *const Self) void
+//  - pub inline fn getBytesNeeded(width: u32, height: u32) u32
+//  - pub inline fn getCell(self: *const Self, row: i32, col: i32) ?*const Cell
+//  - pub inline fn getCellIndex(row: u32, col: u32, width: u32) u32
+//  - pub fn revealCell(self: *Self, flagBitset: *const FlagBitset, team: u32, row: i32, col: i32) error{OutOfMemory}!RevealResult
+//  - pub fn comptimeFormatInit(alloc: std.mem.Allocator, comptime fmt: []const u8) error{OutOfMemory}!Self
+
+const std = @import("std");
+
+const Self = @This();
+
+// Change to reasonable maxes as changes
+// pub const MAX_DIMENSION: u32 = 10_000;
+// pub const MAX_TEAMS: u10 = ~@as(u10, 0);
+
+width: usize,
+height: usize,
+revealed: []u64,
+mines: []u64,
+zeroCells: []u64,
+cellsLeft: usize,
+allocator: std.mem.Allocator,
+
+// pub fn init(allocator: std.mem.Allocator, width: usize, height: usize, numMines: usize, rand: std.Random) error{ OutOfMemory, TooManyMines, InvalidDimensions }!Self {
+// }
